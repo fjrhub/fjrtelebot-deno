@@ -1,6 +1,8 @@
 {
+  "version": "1.0.1",
   "tasks": {
-    "start": "deno run --allow-net --allow-env --allow-read index.js"
+    "dev": "deno run --allow-net --allow-env --allow-read=.env dev.js",
+    "start": "deno run --allow-net --allow-env --allow-read=.env index.js"
   },
   "compilerOptions": {
     "lib": ["deno.ns", "dom"]
