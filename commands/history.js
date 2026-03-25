@@ -1,4 +1,5 @@
 import { kv } from "../kv.js";
+import { InputFile } from "npm:grammy";
 
 export default (bot) => {
   bot.command("history", async (ctx) => {
@@ -11,10 +12,14 @@ export default (bot) => {
       return ctx.reply("Belum ada history");
     }
 
-    const text = history
-      .map((h) => `${h.role}: ${h.content}`)
-      .join("\n");
+    // convert ke JSON string (rapi)
+    const json = JSON.stringify(history, null, 2);
 
-    await ctx.reply(text);
+    const file = new InputFile(
+      new TextEncoder().encode(json),
+      `history_${userId}.json`
+    );
+
+    await ctx.replyWithDocument(file);
   });
 };
