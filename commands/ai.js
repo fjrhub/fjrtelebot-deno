@@ -7,7 +7,7 @@ if (!Deno.env.get("GROQ_API_KEY")) {
   throw new Error("Missing GROQ_API_KEY");
 }
 
-const MODEL = "groq/compound-mini";
+const MODEL = "openai/gpt-oss-120b";
 const MAX_HISTORY = 30;
 const SAFE_LIMIT = 4000;
 
