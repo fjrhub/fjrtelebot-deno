@@ -7,7 +7,7 @@ if (!Deno.env.get("GROQ_API_KEY")) {
   throw new Error("Missing GROQ_API_KEY");
 }
 
-const MODEL = "qwen/qwen3-32b";
+const MODEL = "groq/compound-mini";
 const MAX_HISTORY = 30;
 const SAFE_LIMIT = 4000;
 
@@ -30,6 +30,17 @@ async function saveHistory(userId, messages) {
 async function clearHistory(userId) {
   await kv.delete(["history", userId]);
 }
+
+// --- BARU: Helper untuk Stop Flag ---
+async function getStopFlag(userId) {
+  const res = await kv.get(["stop_flag", userId]);
+  return res.value || false;
+}
+
+async function setStopFlag(userId, value) {
+  await kv.set(["stop_flag", userId], value);
+}
+// ------------------------------------
 
 /* ================= MESSAGE UTILS ================= */
 function splitMessage(text, limit = SAFE_LIMIT) {
@@ -181,6 +192,16 @@ function buildSystemPrompt(ctx) {
 async function handleAICore(ctx, inputText) {
   const userId = ctx.from.id;
 
+  // --- CEK STOP FLAG SEBELUM PROSES ---
+  const isStopped = await getStopFlag(userId);
+  if (isStopped) {
+    return ctx.reply(
+      "⚠️ **AI sedang berhenti**\n\nKetik /ai <pertanyaan> untuk melanjutkan.",
+      { parse_mode: "Markdown" },
+    );
+  }
+  // ------------------------------------
+
   await ctx.replyWithChatAction("typing");
 
   const history = await getHistory(userId);
@@ -215,17 +236,29 @@ export default (bot) => {
 
     const input = text.replace(/^\/ai\s*/i, "").trim();
 
-    // --- FITUR STOP BARU ---
+    // --- COMMAND STOP ---
     if (input === "stop" || text.toLowerCase() === "/ai stop") {
+      await setStopFlag(userId, true);
       return ctx.reply(
-        "✅ **AI Berhenti**\n\nBot tidak akan merespon chat ini sampai kamu mengetik perintah /ai baru.",
+        "✅ **AI Berhenti**\n\nBot tidak akan merespon chat otomatis.\nKetik /ai <pertanyaan> untuk lanjut.",
         { parse_mode: "Markdown" },
       );
     }
-    // -----------------------
+    // --------------------
+
+    // --- COMMAND RESUME (untuk melanjutkan setelah stop) ---
+    if (input === "resume" || input === "continue") {
+      await setStopFlag(userId, false);
+      return ctx.reply(
+        "✅ **AI Aktif Kembali**\n\nBot siap merespon chat kamu.",
+        { parse_mode: "Markdown" },
+      );
+    }
+    // -------------------------------------------------------
 
     if (text === "/ai reset" || input === "reset") {
       await clearHistory(userId);
+      await setStopFlag(userId, false); // Reset stop flag juga
       return ctx.reply("✅ History dihapus.");
     }
 
@@ -259,6 +292,7 @@ export default (bot) => {
 *Commands:*
 • /ai <pertanyaan> - Chat dengan AI
 • /ai stop - **Berhenti** merespon (bypass rate limit)
+• /ai resume - Lanjutkan setelah stop
 • /ai reset - Hapus history chat
 • /ai history - Export history ke file JSON
 • /ai help - Tampilkan bantuan ini
@@ -266,12 +300,21 @@ export default (bot) => {
 *Features:*
 • History tersimpan di KV (max 30 pesan)
 • Support reply pesan bot
-• Auto split pesan panjang`;
+• Auto split pesan panjang
+• Stop flag persisten di KV`;
 
       return ctx.reply(help, { parse_mode: "Markdown" });
     }
 
     if (!input) {
+      // Jika tidak ada input, cek stop flag dan resume otomatis
+      const isStopped = await getStopFlag(userId);
+      if (isStopped) {
+        return ctx.reply(
+          "⚠️ **AI sedang berhenti**\n\nKetik /ai <pertanyaan> untuk melanjutkan.",
+          { parse_mode: "Markdown" },
+        );
+      }
       return ctx.reply(
         "Gunakan:\n/ai <pertanyaan>\n\nContoh: /ai apa itu javascript?\n\nKetik /ai help untuk bantuan.",
       );
@@ -291,6 +334,13 @@ export default (bot) => {
 
     const replied = ctx.message?.reply_to_message;
     if (replied && replied.from?.is_bot) {
+      // --- CEK STOP FLAG JUGA DI AUTO REPLY ---
+      const isStopped = await getStopFlag(ctx.from.id);
+      if (isStopped) {
+        return; // Langsung return, tidak proses AI
+      }
+      // ----------------------------------------
+      
       try {
         await handleAICore(ctx, text);
       } catch (err) {
