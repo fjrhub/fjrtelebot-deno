@@ -215,6 +215,15 @@ export default (bot) => {
 
     const input = text.replace(/^\/ai\s*/i, "").trim();
 
+    // --- FITUR STOP BARU ---
+    if (input === "stop" || text.toLowerCase() === "/ai stop") {
+      return ctx.reply(
+        "✅ **AI Berhenti**\n\nBot tidak akan merespon chat ini sampai kamu mengetik perintah /ai baru.",
+        { parse_mode: "Markdown" },
+      );
+    }
+    // -----------------------
+
     if (text === "/ai reset" || input === "reset") {
       await clearHistory(userId);
       return ctx.reply("✅ History dihapus.");
@@ -249,6 +258,7 @@ export default (bot) => {
 
 *Commands:*
 • /ai <pertanyaan> - Chat dengan AI
+• /ai stop - **Berhenti** merespon (bypass rate limit)
 • /ai reset - Hapus history chat
 • /ai history - Export history ke file JSON
 • /ai help - Tampilkan bantuan ini
