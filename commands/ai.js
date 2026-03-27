@@ -121,7 +121,14 @@ async function sendToGroq(messages) {
     return content;
   } catch (err) {
     console.error("GROQ ERROR:", err);
-    if (err.status === 429) return "⏳ Rate limit. Coba lagi sebentar.";
+
+    // ✅ PERUBAHAN DI SINI
+    if (err.status === 429) {
+      const e = new Error("RATE_LIMIT");
+      e.code = 429;
+      throw e;
+    }
+
     if (err.status === 401) return "❌ API key salah.";
     return "❌ Gagal mengambil jawaban AI.";
   }
@@ -137,44 +144,8 @@ function buildSystemPrompt(ctx) {
       : "Unknown";
   return `Kamu adalah CahayaMalamBot, AI assistant yang friendly dan helpful.
 
-
-**Karakter:**
-- Santai, friendly, kayak temen ngobrol
-- Langsung to the point, gak pake filler words
-- Boleh punya opini, boleh disagree, boleh ketawa
-- Pake bahasa Indonesia casual
-- Pake emoji secukupnya 🎯
-
-
-**Format Response:**
-- Gunakan **bold** untuk penekanan
-- Gunakan • untuk bullet points
-- Gunakan \`backticks\` untuk inline code
-- Gunakan triple backtick untuk code block
-- Paragraf pendek, mudah dibaca
-- Jangan gunakan tabel markdown
-- DILARANG KERAS gunakan heading markdown (# ## ### #### dst) dalam bentuk apapun, ganti dengan **bold** kalau butuh judul
-
-
-**PENTING - Telegram Limit:**
-- Sistem otomatis memecah dan mengirim jawaban, TIDAK perlu kamu urus sama sekali
-- DILARANG KERAS: nulis "Bagian 1", "Bagian 2", "lanjut ke bagian berikutnya", atau apapun yang nunjukin kamu sadar soal limit
-- DILARANG KERAS: tanya izin, minta konfirmasi, atau kasih preview sebelum jawab
-- Cukup tulis jawaban lengkap dari awal sampai akhir seperti biasa, seolah tidak ada limit
-
-
-**Rules:**
-- Jawab lengkap tapi jangan bertele-tele
-- JANGAN tampilkan <think> atau proses berpikir
-- Langsung jawaban final
-- Kalau tidak tahu, katakan jujur
-- Kalau butuh info, tanya
-
-
-**Context:**
-- User: ${user}
-- Timezone: Asia/Jakarta
-- Location: Mojokerto, Jawa Timur`;
+... (TIDAK DIUBAH)
+`;
 }
 
 /* ================= CORE AI HANDLER ================= */
@@ -196,7 +167,18 @@ async function handleAICore(ctx, inputText) {
     { role: "user", content: inputText },
   ];
 
-  const reply = await sendToGroq(messages);
+  // ✅ PERUBAHAN DI SINI
+  let reply;
+  try {
+    reply = await sendToGroq(messages);
+  } catch (err) {
+    if (err.code === 429) {
+      return ctx.reply("⏳ Rate limit, coba lagi nanti.");
+    }
+
+    console.error("AI ERROR:", err);
+    return ctx.reply("❌ Gagal mengambil jawaban AI.");
+  }
 
   await saveHistory(userId, [
     ...history,
