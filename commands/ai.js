@@ -7,14 +7,55 @@ if (!Deno.env.get("GROQ_API_KEY")) {
   throw new Error("Missing GROQ_API_KEY");
 }
 
-const MODEL = "qwen/qwen3-32b";
-const MAX_HISTORY = 30;
+const MODEL = "openai/gpt-oss-120b";
+const MAX_HISTORY_PAIRS = 10;   // 10 pasang = 20 message (user + ai)
+const TOKEN_LIMIT = 5000;       // safety margin dari limit 6000 TPM
+const CHARS_PER_TOKEN = 3.5;    // estimasi: 1 token ≈ 3.5 karakter (Indonesia/mix)
 const SAFE_LIMIT = 4000;
 
 /* ================= GROQ CLIENT ================= */
 const groq =
   globalThis._groq ?? new Groq({ apiKey: Deno.env.get("GROQ_API_KEY") });
 globalThis._groq = groq;
+
+/* ================= TOKEN ESTIMATOR ================= */
+function estimateTokens(text) {
+  return Math.ceil((text?.length ?? 0) / CHARS_PER_TOKEN);
+}
+
+function estimateMessagesTokens(messages) {
+  return messages.reduce((sum, m) => sum + estimateTokens(m.content) + 4, 0);
+}
+
+/* ================= HISTORY TRIMMER ================= */
+/**
+ * Trim history agar total token (system + history + input) tidak melebihi TOKEN_LIMIT.
+ * Buang pasang terlama dari depan sampai muat.
+ */
+function trimHistoryToTokenLimit(history, systemPrompt, inputText) {
+  const systemTokens = estimateTokens(systemPrompt) + 4;
+  const inputTokens = estimateTokens(inputText) + 4;
+  const overhead = systemTokens + inputTokens + 100; // buffer
+
+  // Susun jadi pasangan [user, ai]
+  let pairs = [];
+  for (let i = 0; i + 1 < history.length; i += 2) {
+    pairs.push([history[i], history[i + 1]]);
+  }
+
+  // Potong dari depan sampai estimasi token muat
+  while (pairs.length > 0) {
+    const flat = pairs.flatMap(([u, a]) => [
+      { role: "user", content: u.content },
+      { role: "assistant", content: a.content },
+    ]);
+    const total = overhead + estimateMessagesTokens(flat);
+    if (total <= TOKEN_LIMIT) break;
+    pairs.shift();
+  }
+
+  return pairs.flatMap(([u, a]) => [u, a]);
+}
 
 /* ================= KV HELPERS ================= */
 async function getHistory(userId) {
@@ -23,7 +64,7 @@ async function getHistory(userId) {
 }
 
 async function saveHistory(userId, messages) {
-  const trimmed = messages.slice(-MAX_HISTORY * 2);
+  const trimmed = messages.slice(-(MAX_HISTORY_PAIRS * 2));
   await kv.set(["history", userId], trimmed);
 }
 
@@ -67,7 +108,9 @@ function convertToMarkdownV2(text) {
     else if (b1 || b2) segments.push("*" + escapeMarkdownV2(b1 || b2) + "*");
     else if (i1 || i2) segments.push("_" + escapeMarkdownV2(i1 || i2) + "_");
     else if (lt && url)
-      segments.push(`[${escapeMarkdownV2(lt)}](${url.replace(/[)]/g, "\\)")})`);
+      segments.push(
+        `[${escapeMarkdownV2(lt)}](${url.replace(/[)]/g, "\\)")})`,
+      );
     else segments.push(escapeMarkdownV2(full));
     last = match.index + full.length;
   }
@@ -122,9 +165,14 @@ async function sendToGroq(messages) {
   } catch (err) {
     console.error("GROQ ERROR:", err);
     if (err.status === 429) {
-      const rateErr = new Error("rate_limit");
-      rateErr.isRateLimit = true;
-      throw rateErr;
+      const e = new Error("rate_limit");
+      e.isRateLimit = true;
+      throw e;
+    }
+    if (err.status === 413) {
+      const e = new Error("too_large");
+      e.isTooLarge = true;
+      throw e;
     }
     if (err.status === 401) return "❌ API key salah.";
     return "❌ Gagal mengambil jawaban AI.";
@@ -139,7 +187,7 @@ function buildSystemPrompt(ctx) {
     : from?.first_name
       ? from.first_name + (from.last_name ? ` ${from.last_name}` : "")
       : "Unknown";
-  return `Kamu adalah CahayaMalamBot, AI assistant yang friendly dan helpful.
+  return `Kamu adalah FJRToolsBot, AI assistant yang friendly dan helpful.
 
 
 **Karakter:**
@@ -185,38 +233,84 @@ function buildSystemPrompt(ctx) {
 async function handleAICore(ctx, inputText) {
   const userId = ctx.from.id;
 
+  // Acknowledge dulu ke Telegram supaya webhook tidak timeout
   await ctx.replyWithChatAction("typing");
 
   const history = await getHistory(userId);
+  const systemPrompt = buildSystemPrompt(ctx);
 
-  const groqHistory = history.map((m) => ({
-    role: m.role === "ai" ? "assistant" : m.role,
-    content: m.content,
-  }));
+  // Trim history berdasarkan estimasi token sebelum dikirim ke Groq
+  const trimmedHistory = trimHistoryToTokenLimit(history, systemPrompt, inputText);
+
+  if (trimmedHistory.length < history.length) {
+    console.log(
+      `[AI] History trimmed: ${history.length} → ${trimmedHistory.length} msg for user ${userId}`,
+    );
+  }
 
   const messages = [
-    { role: "system", content: buildSystemPrompt(ctx) },
-    ...groqHistory,
+    { role: "system", content: systemPrompt },
+    ...trimmedHistory.map((m) => ({
+      role: m.role === "ai" ? "assistant" : m.role,
+      content: m.content,
+    })),
     { role: "user", content: inputText },
   ];
 
-  let reply;
-  try {
-    reply = await sendToGroq(messages);
-  } catch (err) {
-    if (err.isRateLimit) {
-      return ctx.reply("⏳ Rate limit. Coba lagi sebentar.");
+  // Fire-and-forget: lepas dari webhook timeout grammY (hardcoded 10s)
+  // Groq tetap diproses di background, response dikirim setelah selesai
+  const run = async () => {
+    let reply;
+
+    try {
+      reply = await sendToGroq(messages);
+    } catch (err) {
+      if (err.isRateLimit) {
+        await ctx.reply("⏳ Rate limit. Coba lagi sebentar.").catch(() => {});
+        return;
+      }
+
+      if (err.isTooLarge) {
+        // Fallback: kirim tanpa history sama sekali
+        console.warn(
+          `[AI] Still too large after trim, retrying without history for user ${userId}`,
+        );
+        try {
+          reply = await sendToGroq([
+            { role: "system", content: systemPrompt },
+            { role: "user", content: inputText },
+          ]);
+        } catch (retryErr) {
+          if (retryErr.isRateLimit) {
+            await ctx.reply("⏳ Rate limit. Coba lagi sebentar.").catch(() => {});
+          } else {
+            await ctx.reply("❌ Terjadi error saat menghubungi AI.").catch(() => {});
+          }
+          return;
+        }
+      } else {
+        console.error("[AI] Unexpected error:", err);
+        await ctx.reply("❌ Terjadi error.").catch(() => {});
+        return;
+      }
     }
-    throw err;
-  }
 
-  await saveHistory(userId, [
-    ...history,
-    { role: "user", content: inputText },
-    { role: "ai", content: reply },
-  ]);
+    // Simpan ke history (pakai history asli, bukan trimmed)
+    // trimming hanya untuk request ke Groq, bukan untuk storage
+    await saveHistory(userId, [
+      ...history,
+      { role: "user", content: inputText },
+      { role: "ai", content: reply },
+    ]);
 
-  await sendMarkdownMessage(ctx, reply);
+    await sendMarkdownMessage(ctx, reply);
+  };
+
+  // Deno: tidak ada waitUntil, jalankan tanpa await
+  run().catch((err) => {
+    console.error("[AI] run() uncaught error:", err);
+    ctx.reply("❌ Terjadi error tidak terduga.").catch(() => {});
+  });
 }
 
 /* ================= BOT COMMANDS ================= */
@@ -257,20 +351,21 @@ export default (bot) => {
     }
 
     if (text === "/ai help" || input === "help") {
-      const help = `*🤖 FJRToolsBot - AI Assistant*
+      const help = `*🤖 FJRToolsBot \\- AI Assistant*
 
 *Commands:*
-• /ai <pertanyaan> - Chat dengan AI
-• /ai reset - Hapus history chat
-• /ai history - Export history ke file JSON
-• /ai help - Tampilkan bantuan ini
+• /ai <pertanyaan> \\- Chat dengan AI
+• /ai reset \\- Hapus history chat
+• /ai history \\- Export history ke file JSON
+• /ai help \\- Tampilkan bantuan ini
 
 *Features:*
-• History tersimpan di KV (max 30 pesan)
+• History tersimpan di KV \\(max ${MAX_HISTORY_PAIRS} pasang pesan\\)
+• Auto\\-trim history kalau terlalu panjang
 • Support reply pesan bot
 • Auto split pesan panjang`;
 
-      return ctx.reply(help, { parse_mode: "Markdown" });
+      return ctx.reply(help, { parse_mode: "MarkdownV2" });
     }
 
     if (!input) {
@@ -279,12 +374,7 @@ export default (bot) => {
       );
     }
 
-    try {
-      await handleAICore(ctx, input);
-    } catch (err) {
-      console.error(err);
-      ctx.reply("❌ Terjadi error.");
-    }
+    await handleAICore(ctx, input);
   });
 
   bot.on("message:text", async (ctx) => {
@@ -293,12 +383,7 @@ export default (bot) => {
 
     const replied = ctx.message?.reply_to_message;
     if (replied && replied.from?.is_bot) {
-      try {
-        await handleAICore(ctx, text);
-      } catch (err) {
-        console.error(err);
-        ctx.reply("❌ Terjadi error.");
-      }
+      await handleAICore(ctx, text);
     }
   });
 };
