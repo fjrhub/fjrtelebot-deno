@@ -1,13 +1,13 @@
 import ping from "./commands/ping.js";
-import ai from "./commands/ai.js";
 import start from "./commands/start.js";
-import history from "./commands/history.js";
-import clearhistory from "./commands/clearhistory.js";
+import history from "./commands/ai-chat/history.js";
+import reset from "./commands/ai-chat/reset.js";
+import ai from "./commands/ai-chat/ai.js";
 
 export const registerHandlers = (bot) => {
   ping(bot);
-  ai(bot);
   start(bot);
   history(bot);
-  clearhistory(bot);
+  reset(bot);
+  ai(bot);
 };
