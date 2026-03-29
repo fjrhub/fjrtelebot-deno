@@ -8,9 +8,9 @@ if (!Deno.env.get("GROQ_API_KEY")) {
 }
 
 const MODEL = "openai/gpt-oss-120b";
-const MAX_HISTORY_PAIRS = 10;   // 10 pasang = 20 message (user + ai)
-const TOKEN_LIMIT = 5000;       // safety margin dari limit 6000 TPM
-const CHARS_PER_TOKEN = 3.5;    // estimasi: 1 token ≈ 3.5 karakter (Indonesia/mix)
+const MAX_HISTORY_PAIRS = 10; // 10 pasang = 20 message (user + ai)
+const TOKEN_LIMIT = 5000; // safety margin dari limit 6000 TPM
+const CHARS_PER_TOKEN = 3.5; // estimasi: 1 token ≈ 3.5 karakter (Indonesia/mix)
 const SAFE_LIMIT = 4000;
 
 /* ================= GROQ CLIENT ================= */
@@ -108,9 +108,7 @@ function convertToMarkdownV2(text) {
     else if (b1 || b2) segments.push("*" + escapeMarkdownV2(b1 || b2) + "*");
     else if (i1 || i2) segments.push("_" + escapeMarkdownV2(i1 || i2) + "_");
     else if (lt && url)
-      segments.push(
-        `[${escapeMarkdownV2(lt)}](${url.replace(/[)]/g, "\\)")})`,
-      );
+      segments.push(`[${escapeMarkdownV2(lt)}](${url.replace(/[)]/g, "\\)")})`);
     else segments.push(escapeMarkdownV2(full));
     last = match.index + full.length;
   }
@@ -240,7 +238,11 @@ async function handleAICore(ctx, inputText) {
   const systemPrompt = buildSystemPrompt(ctx);
 
   // Trim history berdasarkan estimasi token sebelum dikirim ke Groq
-  const trimmedHistory = trimHistoryToTokenLimit(history, systemPrompt, inputText);
+  const trimmedHistory = trimHistoryToTokenLimit(
+    history,
+    systemPrompt,
+    inputText,
+  );
 
   if (trimmedHistory.length < history.length) {
     console.log(
@@ -282,9 +284,13 @@ async function handleAICore(ctx, inputText) {
           ]);
         } catch (retryErr) {
           if (retryErr.isRateLimit) {
-            await ctx.reply("⏳ Rate limit. Coba lagi sebentar.").catch(() => {});
+            await ctx
+              .reply("⏳ Rate limit. Coba lagi sebentar.")
+              .catch(() => {});
           } else {
-            await ctx.reply("❌ Terjadi error saat menghubungi AI.").catch(() => {});
+            await ctx
+              .reply("❌ Terjadi error saat menghubungi AI.")
+              .catch(() => {});
           }
           return;
         }
@@ -319,7 +325,7 @@ export default (bot) => {
     const text = ctx.message?.text?.trim();
     const userId = ctx.from.id;
 
-    const input = text.replace(/^\/ai\s*/i, "").trim();
+    const input = text.replace(/^\/ai(@\w+)?\s*/i, "").trim();
 
     if (text === "/ai reset" || input === "reset") {
       await clearHistory(userId);
@@ -382,7 +388,7 @@ export default (bot) => {
     if (!text || text.startsWith("/")) return;
 
     const replied = ctx.message?.reply_to_message;
-    if (replied && replied.from?.is_bot) {
+    if (replied?.from?.id === ctx.me.id) {
       await handleAICore(ctx, text);
     }
   });
