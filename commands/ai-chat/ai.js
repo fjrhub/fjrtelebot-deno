@@ -37,12 +37,23 @@ function trimHistoryToTokenLimit(history, systemPrompt, inputText) {
   return pairs.flatMap(([u, a]) => [u, a]);
 }
 
-async function getHistory(userId) {
-  const res = await kv.get(["history", userId]);
+/* ================= HISTORY KEY RESOLVER ================= */
+function getHistoryKey(ctx) {
+  if (ctx.chat.type === "private") {
+    return ["history", "user", ctx.from.id];
+  }
+  return ["history", "group", ctx.chat.id];
+}
+
+async function getHistory(ctx) {
+  const key = getHistoryKey(ctx);
+  const res = await kv.get(key);
   return res.value || [];
 }
-async function saveHistory(userId, messages) {
-  await kv.set(["history", userId], messages.slice(-(MAX_HISTORY_PAIRS * 2)));
+
+async function saveHistory(ctx, messages) {
+  const key = getHistoryKey(ctx);
+  await kv.set(key, messages.slice(-(MAX_HISTORY_PAIRS * 2)));
 }
 
 /* ================= MESSAGE FORMATTER ================= */
@@ -126,9 +137,9 @@ async function getCurrentModel() {
 /* ================= GROQ REQUEST ================= */
 async function sendToGroq(messages) {
   try {
-    const model = await getCurrentModel(); // 👈 ambil model dinamis
+    const model = await getCurrentModel();
     const res = await groq.chat.completions.create({
-      model, // 👈 gunakan variabel dinamis
+      model,
       messages,
       temperature: 1,
       max_tokens: 5500,
@@ -159,11 +170,16 @@ async function sendToGroq(messages) {
 /* ================= SYSTEM PROMPT ================= */
 function buildSystemPrompt(ctx) {
   const from = ctx.from;
+  const chatType = ctx.chat.type;
   const user = from?.username
     ? `@${from.username}`
     : from?.first_name
       ? from.first_name + (from.last_name ? ` ${from.last_name}` : "")
       : "Unknown";
+  const chatInfo = chatType === "private" 
+    ? `Chat: Private with ${user}` 
+    : `Chat: Group "${ctx.chat.title || "Unknown"}" (ID: ${ctx.chat.id})`;
+    
   return `Kamu adalah FJRToolsBot, AI assistant yang friendly dan helpful.
 
 **Karakter:**
@@ -197,15 +213,15 @@ function buildSystemPrompt(ctx) {
 
 **Context:**
 - User: ${user}
+- ${chatInfo}
 - Timezone: Asia/Jakarta
 - Location: Mojokerto, Jawa Timur`;
 }
 
 /* ================= CORE AI HANDLER ================= */
 async function handleAICore(ctx, inputText) {
-  const userId = ctx.from.id;
   await ctx.replyWithChatAction("typing");
-  const history = await getHistory(userId);
+  const history = await getHistory(ctx);
   const systemPrompt = buildSystemPrompt(ctx);
   const trimmedHistory = trimHistoryToTokenLimit(
     history,
@@ -253,7 +269,7 @@ async function handleAICore(ctx, inputText) {
         return;
       }
     }
-    await saveHistory(userId, [
+    await saveHistory(ctx, [
       ...history,
       { role: "user", content: inputText },
       { role: "ai", content: reply },
@@ -276,6 +292,7 @@ function getHelpMessage() {
 • /history \\- Export history ke file JSON
 
 *Features:*
+• History terpisah: private \\(per user\\) & group \\(per chat\\)
 • History tersimpan di KV \\(max ${MAX_HISTORY_PAIRS} pasang pesan\\)
 • Auto\\-trim history kalau terlalu panjang
 • Support reply pesan bot
@@ -288,15 +305,12 @@ export default (bot) => {
     const text = ctx.message?.text?.trim();
     const input = text.replace(/^\/ai(@\w+)?\s*/i, "").trim();
 
-    // 🎯 /ai saja atau /ai help → tampilkan help
     if (!input || input === "help")
       return ctx.reply(getHelpMessage(), { parse_mode: "MarkdownV2" });
 
-    // 🤖 AI Chat
     await handleAICore(ctx, input);
   });
 
-  // Reply handler untuk lanjutan chat
   bot.on("message:text", async (ctx) => {
     const text = ctx.message?.text?.trim();
     if (!text || text.startsWith("/")) return;
