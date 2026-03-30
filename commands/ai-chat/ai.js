@@ -2,7 +2,6 @@ import Groq from "npm:groq-sdk";
 import { kv } from "../../kv.js";
 
 /* ================= CONFIG ================= */
-const MODEL = "openai/gpt-oss-120b";
 const MAX_HISTORY_PAIRS = 10;
 const TOKEN_LIMIT = 5000;
 const CHARS_PER_TOKEN = 3.5;
@@ -119,11 +118,17 @@ async function sendMarkdownMessage(ctx, text) {
   }
 }
 
+async function getCurrentModel() {
+  const res = await kv.get(["ai_model"]);
+  return res.value || "openai/gpt-oss-120b";
+}
+
 /* ================= GROQ REQUEST ================= */
 async function sendToGroq(messages) {
   try {
+    const model = await getCurrentModel(); // 👈 ambil model dinamis
     const res = await groq.chat.completions.create({
-      model: MODEL,
+      model, // 👈 gunakan variabel dinamis
       messages,
       temperature: 1,
       max_tokens: 5500,
