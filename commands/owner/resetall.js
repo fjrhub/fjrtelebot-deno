@@ -1,16 +1,20 @@
 import { kv } from "../../kv.js";
 
+/* ================= OWNER CHECK ================= */
+function isOwner(userId) {
+  const ownerId = Deno.env.get("OWNER_ID");
+  if (!ownerId) return false;
+  return userId === parseInt(ownerId);
+}
+
 export default (bot) => {
   bot.command("resetall", async (ctx) => {
-    // 🔐 Owner check
-    const OWNERS = [123456789]; // 🔁 Ganti dengan user ID kamu
-    if (!OWNERS.includes(ctx.from.id)) {
+    if (!isOwner(ctx.from.id)) {
       return ctx.reply("❌ Command ini hanya untuk owner\\.", {
         parse_mode: "MarkdownV2",
       });
     }
 
-    // ⚠️ Confirm step (opsional, bisa di-bypass dengan flag --force)
     const args = ctx.message?.text?.trim().split(/\s+/).slice(1) || [];
     if (!args.includes("--force")) {
       return ctx.reply(
@@ -20,7 +24,6 @@ export default (bot) => {
       );
     }
 
-    // 🗑️ Delete semua key dengan prefix "history"
     let count = 0;
     for await (const entry of kv.list({ prefix: ["history"] })) {
       await kv.delete(entry.key);
