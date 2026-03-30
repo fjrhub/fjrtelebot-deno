@@ -35,7 +35,7 @@ export default (bot) => {
         "*🤖 Daftar Model Tersedia*\n\n" +
         list + "\n\n" +
         "*Gunakan:* `/model nama_model`\n" +
-        "*Contoh:* `/model meta-llama/llama-3.3-70b-versatile`";
+        "*Contoh:* `/qwen/qwen3-32b`";
       
       return ctx.reply(helpText, { 
         parse_mode: "MarkdownV2", 
