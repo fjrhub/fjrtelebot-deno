@@ -2,7 +2,7 @@ import { kv } from "../../kv.js";
 
 const MODELS = [
   "qwen/qwen3-32b",
-  "groq/compound",
+  "groq/compound-mini",
   "llama-3.1-8b-instant",
   "openai/gpt-oss-120b",
   "meta-llama/llama-4-scout-17b-16e-instruct",

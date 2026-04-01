@@ -1,5 +1,5 @@
 {
-  "version": "2.6.12",
+  "version": "2.7.12",
   "tasks": {
     "dev": "deno run --unstable-kv --allow-net --allow-env --allow-read=.env dev.js",
     "start": "deno run --unstable-kv --allow-net --allow-env --allow-read=.env index.js"
