@@ -1,47 +1,13 @@
 import Groq from "npm:groq-sdk";
 import { kv } from "../../kv.js";
 
-/* ================= CONFIG ================= */
-const MAX_HISTORY_PAIRS = 10;
-const TOKEN_LIMIT = 5000;
-const CHARS_PER_TOKEN = 3.5;
-const SAFE_LIMIT = 4000;
-
 /* ================= GROQ CLIENT ================= */
-const groq =
-  globalThis._groq ?? new Groq({ apiKey: Deno.env.get("GROQ_API_KEY") });
+const groq = globalThis._groq ?? new Groq({ apiKey: Deno.env.get("GROQ_API_KEY") });
 globalThis._groq = groq;
-
-/* ================= TOKEN & HISTORY UTILS ================= */
-function estimateTokens(text) {
-  return Math.ceil((text?.length ?? 0) / CHARS_PER_TOKEN);
-}
-function estimateMessagesTokens(messages) {
-  return messages.reduce((sum, m) => sum + estimateTokens(m.content) + 4, 0);
-}
-
-function trimHistoryToTokenLimit(history, systemPrompt, inputText) {
-  const overhead =
-    estimateTokens(systemPrompt) + estimateTokens(inputText) + 108;
-  let pairs = [];
-  for (let i = 0; i + 1 < history.length; i += 2)
-    pairs.push([history[i], history[i + 1]]);
-  while (pairs.length > 0) {
-    const flat = pairs.flatMap(([u, a]) => [
-      { role: "user", content: u.content },
-      { role: "assistant", content: a.content },
-    ]);
-    if (overhead + estimateMessagesTokens(flat) <= TOKEN_LIMIT) break;
-    pairs.shift();
-  }
-  return pairs.flatMap(([u, a]) => [u, a]);
-}
 
 /* ================= HISTORY KEY RESOLVER ================= */
 function getHistoryKey(ctx) {
-  if (ctx.chat.type === "private") {
-    return ["history", "user", ctx.from.id];
-  }
+  if (ctx.chat.type === "private") return ["history", "user", ctx.from.id];
   return ["history", "group", ctx.chat.id];
 }
 
@@ -53,11 +19,25 @@ async function getHistory(ctx) {
 
 async function saveHistory(ctx, messages) {
   const key = getHistoryKey(ctx);
-  await kv.set(key, messages.slice(-(MAX_HISTORY_PAIRS * 2)));
+  // Batas max 20 pesan (10 pasang) di penyimpanan
+  await kv.set(key, messages.slice(-20));
+}
+
+/* ================= HISTORY TRIM (CHAR-BASED, NO TOKEN ESTIMATION) ================= */
+function trimHistorySafe(history, maxChars = 4500) {
+  let chars = 0;
+  const kept = [];
+  // Ambil dari pesan terbaru ke terlama, berhenti kalau melebihi batas karakter
+  for (let i = history.length - 1; i >= 0; i--) {
+    chars += (history[i].content?.length || 0);
+    if (chars > maxChars) break;
+    kept.unshift(history[i]);
+  }
+  return kept;
 }
 
 /* ================= MESSAGE FORMATTER ================= */
-function splitMessage(text, limit = SAFE_LIMIT) {
+function splitMessage(text, limit = 4000) {
   const chunks = [];
   while (text.length > limit) {
     let idx = text.lastIndexOf("\n\n", limit);
@@ -79,11 +59,9 @@ function convertToMarkdownV2(text) {
   const segments = [];
   const regex =
     /```[\s\S]*?```|`[^`]+`|\*\*(.+?)\*\*|__(.+?)__|(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)|\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g;
-  let last = 0,
-    match;
+  let last = 0, match;
   while ((match = regex.exec(text)) !== null) {
-    if (match.index > last)
-      segments.push(escapeMarkdownV2(text.slice(last, match.index)));
+    if (match.index > last) segments.push(escapeMarkdownV2(text.slice(last, match.index)));
     const [full, b1, b2, i1, i2, lt, url] = match;
     if (full.startsWith("```"))
       segments.push("```" + full.slice(3, -3).replace(/`/g, "\\`") + "```");
@@ -101,7 +79,7 @@ function convertToMarkdownV2(text) {
 }
 
 async function sendMarkdownMessage(ctx, text) {
-  for (const chunk of splitMessage(text)) {
+  for (const chunk of splitMessage(text, 4000)) {
     let converted;
     try {
       converted = convertToMarkdownV2(chunk);
@@ -142,7 +120,7 @@ async function sendToGroq(messages) {
       model,
       messages,
       temperature: 1,
-      max_tokens: 5500,
+      max_tokens: 2048, // Diturunkan agar total request tidak melebihi 6000 TPM
     });
     let content = res.choices?.[0]?.message?.content || "❌ No response.";
     content = content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
@@ -223,19 +201,19 @@ async function handleAICore(ctx, inputText) {
   await ctx.replyWithChatAction("typing");
   const history = await getHistory(ctx);
   const systemPrompt = buildSystemPrompt(ctx);
-  const trimmedHistory = trimHistoryToTokenLimit(
-    history,
-    systemPrompt,
-    inputText,
-  );
+  
+  // Trim history berbasis karakter (ganti token estimation)
+  const safeHistory = trimHistorySafe(history, 4500);
+  
   const messages = [
     { role: "system", content: systemPrompt },
-    ...trimmedHistory.map((m) => ({
+    ...safeHistory.map((m) => ({
       role: m.role === "ai" ? "assistant" : m.role,
       content: m.content,
     })),
     { role: "user", content: inputText },
   ];
+
   const run = async () => {
     let reply;
     try {
@@ -246,6 +224,7 @@ async function handleAICore(ctx, inputText) {
         return;
       }
       if (err.isTooLarge) {
+        // Fallback: kirim hanya system + input tanpa history
         try {
           reply = await sendToGroq([
             { role: "system", content: systemPrompt },
@@ -253,13 +232,9 @@ async function handleAICore(ctx, inputText) {
           ]);
         } catch (retryErr) {
           if (retryErr.isRateLimit) {
-            await ctx
-              .reply("⏳ Rate limit. Coba lagi sebentar.")
-              .catch(() => {});
+            await ctx.reply("⏳ Rate limit. Coba lagi sebentar.").catch(() => {});
           } else {
-            await ctx
-              .reply("❌ Terjadi error saat menghubungi AI.")
-              .catch(() => {});
+            await ctx.reply("❌ Terjadi error saat menghubungi AI.").catch(() => {});
           }
           return;
         }
@@ -269,6 +244,7 @@ async function handleAICore(ctx, inputText) {
         return;
       }
     }
+    
     await saveHistory(ctx, [
       ...history,
       { role: "user", content: inputText },
@@ -276,6 +252,7 @@ async function handleAICore(ctx, inputText) {
     ]);
     await sendMarkdownMessage(ctx, reply);
   };
+  
   run().catch((err) => {
     console.error("[AI] run() uncaught error:", err);
     ctx.reply("❌ Terjadi error tidak terduga.").catch(() => {});
@@ -293,7 +270,7 @@ function getHelpMessage() {
 
 *Features:*
 • History terpisah: private \\(per user\\) & group \\(per chat\\)
-• History tersimpan di KV \\(max ${MAX_HISTORY_PAIRS} pasang pesan\\)
+• History tersimpan di KV \\(max 10 pasang pesan\\)
 • Auto\\-trim history kalau terlalu panjang
 • Support reply pesan bot
 • Auto split pesan panjang`;
