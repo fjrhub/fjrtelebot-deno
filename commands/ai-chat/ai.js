@@ -19,15 +19,13 @@ async function getHistory(ctx) {
 
 async function saveHistory(ctx, messages) {
   const key = getHistoryKey(ctx);
-  // Batas max 20 pesan (10 pasang) di penyimpanan
   await kv.set(key, messages.slice(-20));
 }
 
-/* ================= HISTORY TRIM (CHAR-BASED, NO TOKEN ESTIMATION) ================= */
+/* ================= HISTORY TRIM ================= */
 function trimHistorySafe(history, maxChars = 4500) {
   let chars = 0;
   const kept = [];
-  // Ambil dari pesan terbaru ke terlama, berhenti kalau melebihi batas karakter
   for (let i = history.length - 1; i >= 0; i--) {
     chars += (history[i].content?.length || 0);
     if (chars > maxChars) break;
@@ -107,20 +105,31 @@ async function sendMarkdownMessage(ctx, text) {
   }
 }
 
+/* ================= MODEL FETCHER (OPTIMIZED FOR SERVERLESS) ================= */
 async function getCurrentModel() {
-  const res = await kv.get(["ai_model"]);
-  return res.value || "openai/gpt-oss-120b";
+  try {
+    // Opsi { cached: true } memanfaatkan edge cache Deno KV.
+    // Ini otomatis mengurangi frekuensi read ke database utama (konsistensi eventual ~1 jam),
+    // sehingga sangat hemat resource untuk serverless tanpa perlu simpan di RAM.
+    const res = await kv.get(["ai_model"], { cached: true });
+    return res.value || "openai/gpt-oss-120b";
+  } catch (err) {
+    console.error("[ModelFetch] Error:", err.message);
+    return "openai/gpt-oss-120b"; // Fallback aman
+  }
 }
 
 /* ================= GROQ REQUEST ================= */
 async function sendToGroq(messages) {
   try {
+    // Fetch model setiap request, tapi dibackup oleh Deno KV Edge Cache
     const model = await getCurrentModel();
+    
     const res = await groq.chat.completions.create({
       model,
       messages,
       temperature: 1,
-      max_tokens: 2048, // Diturunkan agar total request tidak melebihi 6000 TPM
+      max_tokens: 2048, 
     });
     let content = res.choices?.[0]?.message?.content || "❌ No response.";
     content = content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
@@ -202,7 +211,6 @@ async function handleAICore(ctx, inputText) {
   const history = await getHistory(ctx);
   const systemPrompt = buildSystemPrompt(ctx);
   
-  // Trim history berbasis karakter (ganti token estimation)
   const safeHistory = trimHistorySafe(history, 4500);
   
   const messages = [
@@ -224,7 +232,6 @@ async function handleAICore(ctx, inputText) {
         return;
       }
       if (err.isTooLarge) {
-        // Fallback: kirim hanya system + input tanpa history
         try {
           reply = await sendToGroq([
             { role: "system", content: systemPrompt },
