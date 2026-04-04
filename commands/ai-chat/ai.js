@@ -112,10 +112,10 @@ async function getCurrentModel() {
     // Ini otomatis mengurangi frekuensi read ke database utama (konsistensi eventual ~1 jam),
     // sehingga sangat hemat resource untuk serverless tanpa perlu simpan di RAM.
     const res = await kv.get(["ai_model"], { cached: true });
-    return res.value || "openai/gpt-oss-120b";
+    return res.value || "qwen/qwen3-32b";
   } catch (err) {
     console.error("[ModelFetch] Error:", err.message);
-    return "openai/gpt-oss-120b"; // Fallback aman
+    return "qwen/qwen3-32b"; // Fallback aman
   }
 }
 
