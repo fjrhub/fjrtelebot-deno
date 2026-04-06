@@ -1,3 +1,4 @@
+// Escape karakter HTML untuk keamanan
 const escapeHtml = (text) => {
   return text
     .replace(/&/g, "&amp;")
@@ -8,66 +9,84 @@ const escapeHtml = (text) => {
 };
 
 export default (bot) => {
-  bot.command("start", (ctx) => {
-    ctx.reply("Bot aktif 🚀");
-  });
-
   bot.command("tagall", async (ctx) => {
     const chatId = ctx.chat?.id;
     const chatType = ctx.chat?.type;
 
-    // Validasi hanya di grup/supergroup
+    // 1️⃣ Validasi hanya di grup/supergroup
     if (!chatId || !["group", "supergroup"].includes(chatType)) {
-      return ctx.reply("❌ Perintah ini hanya bisa digunakan di grup/supergroup.");
+      return ctx.reply("❌ Perintah ini hanya dapat digunakan di grup atau supergroup.");
+    }
+
+    // 2️⃣ Wajib ada teks setelah /tagall
+    const customText = ctx.match?.trim();
+    if (!customText) {
+      return ctx.reply("⚠️ Harap sertakan pesan setelah `/tagall`.\nContoh: `/tagall Meeting jam 8`", { parse_mode: "Markdown" });
     }
 
     try {
+      // 📌 CATATAN API: Telegram hanya mengizinkan bot mengambil daftar ADMIN grup.
+      // Untuk tag SEMUA member, lihat panduan cache di bagian bawah.
       const admins = await ctx.api.getChatAdministrators(chatId);
-      const humanAdmins = admins.filter(a => !a.user.is_bot);
+      const targets = admins.filter(
+        (a) => !a.user.is_bot && a.user.id !== ctx.from?.id
+      );
 
-      // Ambil teks kustom jika ada (contoh: /tagall Jangan lupa meeting!)
-      const customText = ctx.match?.trim() || "📢 <b>TAG ALL</b>";
-      const header = `${customText}\n\n`;
-
-      // Format mention: <a href="tg://user?id=ID">Nama</a>
+      // 3️⃣ Format mention: Prioritas @username, fallback ke link aman
       let mentions = "";
-      for (const admin of humanAdmins) {
-        const name = `${admin.user.first_name}${admin.user.last_name ? ` ${admin.user.last_name}` : ""}`;
-        mentions += `<a href="tg://user?id=${admin.user.id}">${escapeHtml(name)}</a> `;
+      for (const user of targets) {
+        if (user.user.username) {
+          mentions += `@${user.user.username} `;
+        } else {
+          // Fallback jika user tidak punya username
+          const name = escapeHtml(user.user.first_name || "Member");
+          mentions += `<a href="tg://user?id=${user.user.id}">${name}</a> `;
+        }
       }
 
       if (!mentions.trim()) {
-        return ctx.reply("⚠️ Tidak ditemukan admin manusia di grup ini.");
+        return ctx.reply("⚠️ Tidak ditemukan member lain untuk di-tag.");
       }
 
-      // Telegram membatasi pesan maksimal 4096 karakter
+      // 4️⃣ Tag pengirim (prioritas @username)
+      const senderTag = ctx.from?.username
+        ? `@${ctx.from.username}`
+        : `<a href="tg://user?id=${ctx.from?.id}">${escapeHtml(ctx.from?.first_name || "User")}</a>`;
+
+      // 5️⃣ Susun pesan friendly
+      const fullMessage = `📢 <b>Announcement</b>
+
+${escapeHtml(customText)}
+
+👤 <b>Sent by:</b> ${senderTag}
+🔔 <b>Tagged:</b> ${mentions.trim()}`;
+
+      // 6️⃣ Auto-split jika > 4096 karakter
       const maxLength = 4096;
       const parts = [];
-      let currentPart = header;
-      const mentionArray = mentions.trim().split(" ");
+      let currentPart = "";
+      const words = fullMessage.split(/\s+/);
 
-      for (const mention of mentionArray) {
-        if ((currentPart + " " + mention).length > maxLength) {
+      for (const word of words) {
+        if ((currentPart + " " + word).length > maxLength) {
           parts.push(currentPart.trim());
-          currentPart = header + mention;
+          currentPart = word;
         } else {
-          currentPart += " " + mention;
+          currentPart += (currentPart ? " " : "") + word;
         }
       }
-      if (currentPart.trim().length > header.trim().length) {
-        parts.push(currentPart.trim());
-      }
+      if (currentPart) parts.push(currentPart);
 
-      // Kirim pesan berurutan dengan delay anti-flood
+      // 7️⃣ Kirim dengan delay anti-flood
       for (let i = 0; i < parts.length; i++) {
         await ctx.reply(parts[i], { parse_mode: "HTML" });
         if (i < parts.length - 1) {
-          await new Promise((res) => setTimeout(res, 1000)); // Delay 1 detik
+          await new Promise((resolve) => setTimeout(resolve, 1000)); // Delay 1 detik
         }
       }
     } catch (error) {
-      console.error("Error di /tagall:", error);
-      ctx.reply("❌ Gagal menjalankan perintah. Pastikan bot adalah <b>admin</b> grup dan memiliki izin mengirim pesan.");
+      console.error("❌ Tagall Error:", error);
+      ctx.reply("❌ Gagal menjalankan perintah. Pastikan bot adalah <b>admin</b> grup dan memiliki izin kirim pesan.");
     }
   });
 };
