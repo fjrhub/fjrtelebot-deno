@@ -8,6 +8,7 @@ import cekmodel from "./commands/ai-chat/cekmodel.js";
 import model from "./commands/ai-chat/model.js";
 import historyall from "./commands/owner/historyall.js";
 import resetall from "./commands/owner/resetall.js";
+import btc from "./commands/crypto/btc.js";
 
 export const registerHandlers = (bot) => {
   ping(bot);
@@ -19,5 +20,6 @@ export const registerHandlers = (bot) => {
   historyall(bot);
   resetall(bot);
   tagall(bot);
+  btc(bot);
   ai(bot);
 };
