@@ -1,11 +1,7 @@
-// Escape karakter HTML untuk keamanan
-const escapeHtml = (text) => {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+// Escape karakter khusus MarkdownV2 agar tidak error parse
+const escapeMDV2 = (text) => {
+  if (!text) return '';
+  return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
 };
 
 export default (bot) => {
@@ -13,80 +9,81 @@ export default (bot) => {
     const chatId = ctx.chat?.id;
     const chatType = ctx.chat?.type;
 
-    // 1️⃣ Validasi hanya di grup/supergroup
-    if (!chatId || !["group", "supergroup"].includes(chatType)) {
-      return ctx.reply("❌ Perintah ini hanya dapat digunakan di grup atau supergroup.");
+    // 1️⃣ Validasi grup/supergroup
+    if (!chatId || !['group', 'supergroup'].includes(chatType)) {
+      return ctx.reply('❌ _This command only works in groups or supergroups._', { parse_mode: 'MarkdownV2' });
     }
 
-    // 2️⃣ Wajib ada teks setelah /tagall
+    // 2️⃣ Wajib ada teks kustom
     const customText = ctx.match?.trim();
     if (!customText) {
-      return ctx.reply("⚠️ Harap sertakan pesan setelah `/tagall`.\nContoh: `/tagall Meeting jam 8`", { parse_mode: "Markdown" });
+      return ctx.reply(
+        '⚠️ _Please provide a message after `/tagall`._\n\n' +
+        '_Example:_ `/tagall Meeting at 8 PM`',
+        { parse_mode: 'MarkdownV2' }
+      );
     }
 
     try {
-      // 📌 CATATAN API: Telegram hanya mengizinkan bot mengambil daftar ADMIN grup.
-      // Untuk tag SEMUA member, lihat panduan cache di bagian bawah.
+      // 📌 API Limit: Telegram hanya menyediakan endpoint admin.
+      // Untuk tag SEMUA member, simpan ID via event `message`/`new_chat_members` di DB.
       const admins = await ctx.api.getChatAdministrators(chatId);
       const targets = admins.filter(
         (a) => !a.user.is_bot && a.user.id !== ctx.from?.id
       );
 
-      // 3️⃣ Format mention: Prioritas @username, fallback ke link aman
-      let mentions = "";
-      for (const user of targets) {
-        if (user.user.username) {
-          mentions += `@${user.user.username} `;
+      if (targets.length === 0) {
+        return ctx.reply('⚠️ _No other members to tag._', { parse_mode: 'MarkdownV2' });
+      }
+
+      // 3️⃣ Format tag: prioritas @username
+      let mentions = '';
+      for (const u of targets) {
+        if (u.user.username) {
+          mentions += `@${u.user.username} `;
         } else {
-          // Fallback jika user tidak punya username
-          const name = escapeHtml(user.user.first_name || "Member");
-          mentions += `<a href="tg://user?id=${user.user.id}">${name}</a> `;
+          const name = escapeMDV2(u.user.first_name || 'Member');
+          mentions += `[${name}](tg://user?id=${u.user.id}) `;
         }
       }
 
-      if (!mentions.trim()) {
-        return ctx.reply("⚠️ Tidak ditemukan member lain untuk di-tag.");
-      }
-
-      // 4️⃣ Tag pengirim (prioritas @username)
+      // Tag pengirim
       const senderTag = ctx.from?.username
         ? `@${ctx.from.username}`
-        : `<a href="tg://user?id=${ctx.from?.id}">${escapeHtml(ctx.from?.first_name || "User")}</a>`;
+        : `[${escapeMDV2(ctx.from?.first_name || 'User')}](tg://user?id=${ctx.from.id})`;
 
-      // 5️⃣ Susun pesan friendly
-      const fullMessage = `📢 <b>Announcement</b>
+      // 4️⃣ Susun pesan (layout rapi & terpisah)
+      const escapedMsg = escapeMDV2(customText);
+      const headerPart = `📢 *ANNOUNCEMENT*\n\n${escapedMsg}\n\n📤 *Sent by:* ${senderTag}\n🔔 *Tags:* `;
 
-${escapeHtml(customText)}
+      // 5️⃣ Split aman untuk MarkdownV2 (hanya pecah bagian tags jika >4096)
+      const MAX_LEN = 4096;
+      const mentionArray = mentions.trim().split(' ');
+      const messagesToSend = [];
+      let currentPart = headerPart;
 
-👤 <b>Sent by:</b> ${senderTag}
-🔔 <b>Tagged:</b> ${mentions.trim()}`;
-
-      // 6️⃣ Auto-split jika > 4096 karakter
-      const maxLength = 4096;
-      const parts = [];
-      let currentPart = "";
-      const words = fullMessage.split(/\s+/);
-
-      for (const word of words) {
-        if ((currentPart + " " + word).length > maxLength) {
-          parts.push(currentPart.trim());
-          currentPart = word;
+      for (const mention of mentionArray) {
+        if ((currentPart + ' ' + mention).length > MAX_LEN) {
+          messagesToSend.push(currentPart.trim());
+          currentPart = `🔔 *Tags (cont.):* ${mention}`;
         } else {
-          currentPart += (currentPart ? " " : "") + word;
+          currentPart += ' ' + mention;
         }
       }
-      if (currentPart) parts.push(currentPart);
+      if (currentPart.trim().length > headerPart.length) {
+        messagesToSend.push(currentPart.trim());
+      }
 
-      // 7️⃣ Kirim dengan delay anti-flood
-      for (let i = 0; i < parts.length; i++) {
-        await ctx.reply(parts[i], { parse_mode: "HTML" });
-        if (i < parts.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 1000)); // Delay 1 detik
+      // 6️⃣ Kirim dengan delay anti-flood
+      for (let i = 0; i < messagesToSend.length; i++) {
+        await ctx.reply(messagesToSend[i], { parse_mode: 'MarkdownV2' });
+        if (i < messagesToSend.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       }
     } catch (error) {
-      console.error("❌ Tagall Error:", error);
-      ctx.reply("❌ Gagal menjalankan perintah. Pastikan bot adalah <b>admin</b> grup dan memiliki izin kirim pesan.");
+      console.error('❌ Tagall Error:', error);
+      ctx.reply('❌ _Failed to execute. Make sure I am an admin with message permissions._', { parse_mode: 'MarkdownV2' });
     }
   });
 };
