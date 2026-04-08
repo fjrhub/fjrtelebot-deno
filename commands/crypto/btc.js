@@ -7,10 +7,10 @@ export default (bot) => {
       const data = await res.json();
       
       const coins = [
-        { id: "bitcoin", symbol: "BTC", name: "Bitcoin", emoji: "₿" },
-        { id: "ethereum", symbol: "ETH", name: "Ethereum", emoji: "Ξ" },
-        { id: "tether-gold", symbol: "XAUT", name: "Tether Gold", emoji: "🥇" },
-        { id: "hyperliquid", symbol: "HYPE", name: "Hyperliquid", emoji: "⚡" }
+        { id: "bitcoin", symbol: "BTC", emoji: "₿" },
+        { id: "ethereum", symbol: "ETH", emoji: "🔷" },
+        { id: "tether-gold", symbol: "XAUT", emoji: "🥇" },
+        { id: "hyperliquid", symbol: "HYPE", emoji: "⚡" }
       ];
 
       let message = `💰 *Crypto Prices*\n\n`;
@@ -30,7 +30,8 @@ export default (bot) => {
           minimumFractionDigits: 0,
         }).format(price.idr);
         
-        message += `${coin.emoji} *${coin.name}* (${coin.symbol})\n` +
+        // Format menggunakan $SYMBOL
+        message += `${coin.emoji} *$${coin.symbol}*\n` +
                    `🇺🇸 ${usd}\n` +
                    `🇮🇩 ${idr}\n\n`;
       }
