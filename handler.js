@@ -3,6 +3,7 @@ import start from "./commands/start.js";
 import history from "./commands/ai-chat/history.js";
 import reset from "./commands/ai-chat/reset.js";
 import ai from "./commands/ai-chat/ai.js";
+import search from "./commands/ai-chat/search.js";
 import tagall from "./commands/tools/tagall.js";
 import cekmodel from "./commands/ai-chat/cekmodel.js";
 import model from "./commands/ai-chat/model.js";
@@ -21,5 +22,6 @@ export const registerHandlers = (bot) => {
   resetall(bot);
   tagall(bot);
   btc(bot);
+  search(bot);
   ai(bot);
 };
