@@ -5,6 +5,7 @@ import reset from "./commands/ai-chat/reset.js";
 import ai from "./commands/ai-chat/ai.js";
 import github from "./commands/tools/github.js";
 import setver from "./commands/tools/setver.js";
+import resetver from "./commands/tools/resetver.js";
 import tagall from "./commands/tools/tagall.js";
 import cekmodel from "./commands/ai-chat/cekmodel.js";
 import model from "./commands/ai-chat/model.js";
@@ -25,5 +26,6 @@ export const registerHandlers = (bot) => {
   btc(bot);
   github(bot);
   setver(bot);
+  resetver(bot);
   ai(bot);
 };
