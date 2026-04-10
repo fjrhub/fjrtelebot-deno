@@ -1,4 +1,3 @@
-// commands/github.js
 import { kv } from "../../kv.js";
 import { repos, parseGithubUrl } from "../../config/config-repos.js";
 
@@ -8,10 +7,10 @@ const fetchLatestRelease = async (owner, repo) => {
       `https://api.github.com/repos/${owner}/${repo}/releases/latest`,
       {
         headers: {
-          Accept: "application/vnd.github+json",
-          "User-Agent": "Telegram-Bot/1.0",
-        },
-      },
+          'Accept': 'application/vnd.github+json',
+          'User-Agent': 'Telegram-Bot/1.0'
+        }
+      }
     );
 
     if (!res.ok) return null;
@@ -20,7 +19,7 @@ const fetchLatestRelease = async (owner, repo) => {
     return {
       tag_name: data.tag_name,
       published_at: data.published_at,
-      html_url: data.html_url,
+      html_url: data.html_url
     };
   } catch {
     return null;
@@ -37,43 +36,38 @@ export default (bot) => {
       const latest = await fetchLatestRelease(owner, repo);
 
       if (!latest) {
-        results.push(
-          `🔹 <b>${r.name}</b>\n❌ Failed to fetch data or repo is private`,
-        );
+        results.push(`🔹 <b>${r.name}</b>\n❌ Failed to fetch data or repo is private`);
         continue;
       }
 
       const kvKey = ["gh_ver", userId, owner, repo];
       const { value: savedVer } = await kv.get(kvKey);
-
-      // ✅ Tampilkan status berdasarkan apakah sudah di-set atau belum
+      
+      // ✅ Handle null/undefined → show "Not set"
       let status, previousDisplay;
-
-      if (savedVer === undefined) {
+      
+      if (savedVer == null) {
         previousDisplay = "Not set";
         status = "⚪ Not set";
       } else {
         previousDisplay = savedVer;
-        status =
-          savedVer === latest.tag_name
-            ? "✅ Up to date"
-            : "🆕 Update available!";
+        status = savedVer === latest.tag_name 
+          ? "✅ Up to date" 
+          : "🆕 Update available!";
       }
 
       const publishDate = latest.published_at
-        ? new Date(latest.published_at).toLocaleDateString("en-US", {
-            day: "numeric",
-            month: "short",
-            year: "numeric",
+        ? new Date(latest.published_at).toLocaleDateString('en-US', {
+            day: 'numeric', month: 'short', year: 'numeric'
           })
-        : "-";
+        : '-';
 
       results.push(
         `🔹 <b>${r.name}</b>\n` +
-          `📦 Previous: <code>${previousDisplay}</code>\n` +
-          `🚀 Latest: <code>${latest.tag_name}</code> ${status}\n` +
-          `📅 Released: ${publishDate}\n` +
-          `🔗 <a href="${latest.html_url}">View Release</a>`,
+        `📦 Previous: <code>${previousDisplay}</code>\n` +
+        `🚀 Latest: <code>${latest.tag_name}</code> ${status}\n` +
+        `📅 Released: ${publishDate}\n` +
+        `🔗 <a href="${latest.html_url}">View Release</a>`
       );
     }
 
