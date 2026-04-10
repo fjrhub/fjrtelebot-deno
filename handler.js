@@ -1,5 +1,5 @@
-import ping from "./commands/ping.js";
-import start from "./commands/start.js";
+import ping from "./commands/tools/ping.js";
+import start from "./commands/tools/start.js";
 import history from "./commands/ai-chat/history.js";
 import reset from "./commands/ai-chat/reset.js";
 import ai from "./commands/ai-chat/ai.js";
