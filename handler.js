@@ -7,6 +7,7 @@ import github from "./commands/tools/github.js";
 import setver from "./commands/tools/setver.js";
 import encrypt from "./commands/tools/encrypt.js";
 import decrypt from "./commands/tools/decrypt.js";
+import help from "./commands/tools/help.js";
 import resetver from "./commands/tools/resetver.js";
 import tagall from "./commands/tools/tagall.js";
 import cekmodel from "./commands/ai-chat/cekmodel.js";
@@ -30,6 +31,7 @@ export const registerHandlers = (bot) => {
   setver(bot);
   encrypt(bot);
   decrypt(bot);
+  help(bot);
   resetver(bot);
   ai(bot);
 };
