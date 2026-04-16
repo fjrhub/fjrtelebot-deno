@@ -14,7 +14,10 @@ export default (bot) => {
     const enc = new TextEncoder();
 
     try {
-      // derive key dari password
+      // 1. Generate random salt (16 bytes / 128-bit)
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+
+      // 2. Derive key dari password + salt
       const keyMaterial = await crypto.subtle.importKey(
         "raw",
         enc.encode(password),
@@ -26,7 +29,7 @@ export default (bot) => {
       const key = await crypto.subtle.deriveKey(
         {
           name: "PBKDF2",
-          salt: enc.encode("fjr-salt"),
+          salt, // ← Pakai salt yang baru di-generate
           iterations: 100000,
           hash: "SHA-256",
         },
@@ -36,6 +39,7 @@ export default (bot) => {
         ["encrypt"]
       );
 
+      // 3. Generate IV dan encrypt
       const iv = crypto.getRandomValues(new Uint8Array(12));
 
       const encrypted = await crypto.subtle.encrypt(
@@ -44,12 +48,13 @@ export default (bot) => {
         enc.encode(text)
       );
 
+      // 4. Gabungkan iv, data, DAN salt ke dalam payload JSON
       const result = JSON.stringify({
         iv: Array.from(iv),
         data: Array.from(new Uint8Array(encrypted)),
+        salt: Array.from(salt), // ← Salt ikut dikirim!
       });
 
-      // Keterangan "Hasil Encrypt:" ditambahkan di sini, dengan hasil dibungkus <code>
       ctx.reply(`Hasil Encrypt:\n\n<code>${result}</code>`, { parse_mode: "HTML" });
     } catch (err) {
       ctx.reply("Gagal encrypt ❌");
