@@ -3,34 +3,34 @@ export default (bot) => {
     const helpMessage = `*🤖 FJRToolsBot - AI Assistant & Utilities*
 
 *📝 AI & Chat:*
-• /ai <tanya> \- Chat interaktif dengan AI
-• /model \- Pilih model AI yang tersedia
-• /cekmodel \- Lihat model yang sedang aktif
-• /history \- Export history chat ke JSON
-• /reset \- Hapus riwayat percakapan
+• /ai <question> \- Interactive chat with AI
+• /model \- Select available AI model
+• /cekmodel \- View current active model
+• /history \- Export chat history to JSON
+• /reset \- Clear conversation history
 
 *🛠️ Tools & Utility:*
-• /github \- Info repository/user GitHub
-• /encrypt \- Enkripsi teks (keamanan)
-• /decrypt \- Dekripsi teks rahasia
-• /ping \- Cek latensi respon bot
-• /tagall \- Mention semua anggota grup
+• /github \- Get GitHub repository/user info
+• /encrypt \- Encrypt text (security)
+• /decrypt \- Decrypt secret text
+• /ping \- Check bot response latency
+• /tagall \- Mention all group members
 
 *💰 Finance:*
-• /btc \- Info harga Bitcoin terkini
+• /btc \- Get latest Bitcoin price
 
 *⚙️ System & Owner:*
-• /start \- Memulai interaksi bot
-• /setver \- Set versi bot (Admin)
-• /resetver \- Reset versi bot (Admin)
-• /historyall \- Cek semua log (Owner)
-• /resetall \- Bersihkan semua data (Owner)
+• /start \- Start bot interaction
+• /setver \- Set bot version (Admin)
+• /resetver \- Reset bot version (Admin)
+• /historyall \- View all logs (Owner)
+• /resetall \- Clear all data (Owner)
 
-*✨ Fitur Utama:*
-• *Dual-History:* Terpisah antara Private & Group.
-• *Auto-Trim:* Menjaga memori tetap ringan.
-• *Auto-Split:* Mendukung pesan yang sangat panjang.
-• *Persistence:* Data tersimpan aman di Cloud KV.`;
+*✨ Key Features:*
+• *Dual-History:* Separate history for Private & Group chats
+• *Auto-Trim:* Keeps memory usage efficient
+• *Auto-Split:* Supports very long messages
+• *Persistence:* Data safely stored in Cloud KV`;
 
     return ctx.reply(helpMessage, { parse_mode: "Markdown" });
   });
