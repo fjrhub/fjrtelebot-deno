@@ -19,7 +19,7 @@ export default (bot) => {
 
     if (!args) {
       // Fetch langsung dari DB (tanpa cache) agar daftar model selalu akurat
-      const current = (await kv.get(["ai_model"], { cached: false })).value || "openai/gpt-oss-120b";
+      const current = (await kv.get(["ai_model"], { cached: false })).value || "qwen/qwen3-32b";
       
       const list = MODELS.map((m, i) => {
         const escapedModel = escapeMarkdownV2(m);
