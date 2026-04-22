@@ -22,11 +22,16 @@ export default (bot) => {
     };
 
     // =========================
-    // Format token 2 baris
+    // Format token (2 baris, 4 digit)
     // =========================
     const formatToken = (val) => {
       if (!val || val === "-") return "-";
+
       const clean = val.replace(/\D/g, "");
+
+      // opsional validasi minimal
+      if (clean.length < 16) return val;
+
       const grouped = clean.match(/.{1,4}/g) || [];
 
       const line1 = grouped.slice(0, 3).join(" ");
@@ -48,9 +53,13 @@ export default (bot) => {
       /Tanggal transaksi:\s*(.+)/i,
     ]);
 
+    // 🔥 SUPPORT TOKEN FLEXIBLE
     const rawToken = getValue([
-      /Stroom\/Nomor Token\s*\n\s*(\d+)/i,
-      /(\d{16,})/,
+      // multi-line + spasi
+      /Stroom\/Nomor Token\s*\n\s*([\d\s]+)/i,
+
+      // fallback angka panjang (dengan/ tanpa spasi)
+      /(\d[\d\s]{15,})/,
     ]);
 
     const token = formatToken(rawToken);
@@ -104,13 +113,13 @@ export default (bot) => {
     });
 
     // =========================
-    // 2. DETAIL (urutan terbaik)
+    // 2. DETAIL
     // =========================
     const detailMsg = `
 ${formatLine("No Pesanan", orderId)}
 ${formatLine("Tanggal", date)}
 ${formatLine("No Pelanggan", customerId)}
-${formatLine("Nama", customerName)}
+${formatLine("Nama", customerName.toUpperCase())}
 ${formatLine("Tarif Daya", tarif)}
 ${formatLine("Jumlah kWh", kwh)}
 ${formatLine("Produk", `Token PLN ${total}`)}
