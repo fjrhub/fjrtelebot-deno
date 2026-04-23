@@ -25,7 +25,7 @@ export default (bot) => {
           maximumFractionDigits: 0,
         }).format(num);
 
-      let message = `💰 *Crypto Prices*\n\n`;
+      let rows = [];
 
       for (const coin of coins) {
         const price = data[coin.id];
@@ -34,15 +34,29 @@ export default (bot) => {
         const usd = `$${formatUSD(price.usd)}`;
         const idr = `Rp${formatIDR(price.idr)}`;
 
-        // alignment (biar "|" sejajar)
-        const left = `${coin.symbol}`.padEnd(4, " ");
-        const usdCol = usd.padStart(10, " ");
-        const idrCol = idr.padStart(15, " ");
-
-        message += `${left} ${usdCol} | ${idrCol}\n`;
+        rows.push({
+          symbol: coin.symbol,
+          usd,
+          idr,
+        });
       }
 
-      message += `\n_Source: CoinGecko_`;
+      // cari panjang max biar auto rapi
+      const maxSymbol = Math.max(...rows.map(r => r.symbol.length));
+      const maxUsd = Math.max(...rows.map(r => r.usd.length));
+      const maxIdr = Math.max(...rows.map(r => r.idr.length));
+
+      let table = "";
+      for (const r of rows) {
+        table += `${r.symbol.padEnd(maxSymbol)}  ${r.usd.padStart(maxUsd)} │ ${r.idr.padStart(maxIdr)}\n`;
+      }
+
+      const message =
+        `💰 *Crypto Prices*\n\n` +
+        "```\n" +
+        table +
+        "```\n" +
+        `_Source: CoinGecko_`;
 
       await ctx.reply(message, { parse_mode: "Markdown" });
     } catch (err) {
