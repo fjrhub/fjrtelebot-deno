@@ -16,18 +16,14 @@ export default (bot) => {
 
       const formatUSD = (num) =>
         new Intl.NumberFormat("en-US", {
+          minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         }).format(num);
 
-      const formatIDR = (num) => {
-        if (num >= 1_000_000_000)
-          return "Rp" + (num / 1_000_000_000).toFixed(2) + "B";
-        if (num >= 1_000_000)
-          return "Rp" + (num / 1_000_000).toFixed(1) + "M";
-        if (num >= 1_000)
-          return "Rp" + (num / 1_000).toFixed(0) + "K";
-        return "Rp" + num;
-      };
+      const formatIDR = (num) =>
+        new Intl.NumberFormat("id-ID", {
+          maximumFractionDigits: 0,
+        }).format(num);
 
       let message = `💰 *Crypto Prices*\n\n`;
 
@@ -36,9 +32,14 @@ export default (bot) => {
         if (!price) continue;
 
         const usd = `$${formatUSD(price.usd)}`;
-        const idr = formatIDR(price.idr);
+        const idr = `Rp${formatIDR(price.idr)}`;
 
-        message += `${coin.symbol.padEnd(4, " ")}: ${usd} | ${idr}\n`;
+        // alignment (biar "|" sejajar)
+        const left = `${coin.symbol}`.padEnd(4, " ");
+        const usdCol = usd.padStart(10, " ");
+        const idrCol = idr.padStart(15, " ");
+
+        message += `${left} ${usdCol} | ${idrCol}\n`;
       }
 
       message += `\n_Source: CoinGecko_`;
