@@ -96,7 +96,7 @@ export default (bot) => {
     // Formatter
     // =========================
     const formatLine = (label, value) => {
-      return label.padEnd(14, " ") + " : " + value;
+      return label.padEnd(28, " ") + " : " + value;
     };
 
     // =========================
