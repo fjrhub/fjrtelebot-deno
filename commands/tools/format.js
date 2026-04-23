@@ -22,14 +22,12 @@ export default (bot) => {
     };
 
     // =========================
-    // Format token (2 baris, 4 digit)
+    // Format token (2 baris)
     // =========================
     const formatToken = (val) => {
       if (!val || val === "-") return "-";
 
       const clean = val.replace(/\D/g, "");
-
-      // opsional validasi minimal
       if (clean.length < 16) return val;
 
       const grouped = clean.match(/.{1,4}/g) || [];
@@ -53,20 +51,16 @@ export default (bot) => {
       /Tanggal transaksi:\s*(.+)/i,
     ]);
 
-    // 🔥 SUPPORT TOKEN FLEXIBLE
     const rawToken = getValue([
-      // multi-line + spasi
       /Stroom\/Nomor Token\s*\n\s*([\d\s]+)/i,
-
-      // fallback angka panjang (dengan/ tanpa spasi)
       /(\d[\d\s]{15,})/,
     ]);
 
     const token = formatToken(rawToken);
 
-    const customerId = getValue([
-      /Nomor Pelanggan\s*\n\s*(\d+)/i,
-      /Nomor pelanggan:\s*(\d+)/i,
+    // 🔥 GANTI KE NOMOR METER
+    const meter = getValue([
+      /Nomor Meter\s*\n\s*(\d+)/i,
     ]);
 
     const customerName = getValue([
@@ -106,19 +100,19 @@ export default (bot) => {
     };
 
     // =========================
-    // 1. TOKEN
+    // TOKEN
     // =========================
     await ctx.reply("```\n" + token + "\n```", {
       parse_mode: "Markdown",
     });
 
     // =========================
-    // 2. DETAIL
+    // DETAIL
     // =========================
     const detailMsg = `
 ${formatLine("No Pesanan", orderId)}
 ${formatLine("Tanggal", date)}
-${formatLine("No Pelanggan", customerId)}
+${formatLine("No Meter", meter)}
 ${formatLine("Nama", customerName.toUpperCase())}
 ${formatLine("Tarif Daya", tarif)}
 ${formatLine("Jumlah kWh", kwh)}
