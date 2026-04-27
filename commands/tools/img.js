@@ -7,7 +7,7 @@ export default (bot) => {
       const args = text.split(" ").slice(1);
 
       if (!args.length) {
-        return ctx.reply("Contoh:\n/img https://linkgambar.png");
+        return;
       }
 
       const url = args[0];
@@ -15,29 +15,25 @@ export default (bot) => {
       try {
         new URL(url);
       } catch {
-        return ctx.reply("URL tidak valid.");
+        return;
       }
-
-      await ctx.reply("Mengunduh gambar...");
 
       const res = await fetch(url);
 
       if (!res.ok) {
-        return ctx.reply("Gagal download gambar.");
+        return;
       }
 
       const bytes = new Uint8Array(await res.arrayBuffer());
 
-      await ctx.replyWithPhoto(
-        new InputFile(bytes, "image.png"),
-        {
-          caption: "Berhasil dikirim ✅"
-        }
-      );
+      await ctx.replyWithPhoto(new InputFile(bytes, "image.png"), {
+        caption: "✅",
+      });
 
+      // hapus pesan command pengirim
+      await ctx.deleteMessage().catch(() => {});
     } catch (err) {
       console.error(err);
-      await ctx.reply("Terjadi error.");
     }
   });
 };
