@@ -26,9 +26,7 @@ export default (bot) => {
 
       const bytes = new Uint8Array(await res.arrayBuffer());
 
-      await ctx.replyWithPhoto(new InputFile(bytes, "image.png"), {
-        caption: "✅",
-      });
+      await ctx.replyWithPhoto(new InputFile(bytes, "image.png"));
 
       // hapus pesan command pengirim
       await ctx.deleteMessage().catch(() => {});
