@@ -1,6 +1,6 @@
 import ping from "./commands/tools/ping.js";
 import start from "./commands/tools/start.js";
-// import img from "./commands/tools/img.js";
+import qr from "./commands/tools/qr.js";
 import history from "./commands/ai-chat/history.js";
 import reset from "./commands/ai-chat/reset.js";
 import ai from "./commands/ai-chat/ai.js";
@@ -21,7 +21,7 @@ import btc from "./commands/crypto/btc.js";
 export const registerHandlers = (bot) => {
   ping(bot);
   start(bot);
-  // img(bot);
+  qr(bot);
   history(bot);
   reset(bot);
   model(bot);
