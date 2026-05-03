@@ -5,6 +5,7 @@ import history from "./commands/ai-chat/history.js";
 import reset from "./commands/ai-chat/reset.js";
 import ai from "./commands/ai-chat/ai.js";
 import github from "./commands/tools/github.js";
+import calc from "./commands/tools/calc.js";
 import setver from "./commands/tools/setver.js";
 import encrypt from "./commands/tools/enc.js";
 import decrypt from "./commands/tools/dec.js";
@@ -23,6 +24,7 @@ export const registerHandlers = (bot) => {
   start(bot);
   qr(bot);
   history(bot);
+  calc(bot);
   reset(bot);
   model(bot);
   cekmodel(bot);
