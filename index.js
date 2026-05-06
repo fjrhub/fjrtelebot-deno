@@ -13,21 +13,23 @@ const OWNER_ID = Deno.env.get("OWNER_ID");
 // =========================
 // CRON TEST JAM 00:10
 // =========================
-Deno.cron("test-cron-0010", "10 0 * * *", async () => {
+Deno.cron("test-cron-0015", "15 0 * * *", async () => {
   try {
+    const OWNER_ID = Deno.env.get("OWNER_ID");
+
     if (!OWNER_ID) {
-      console.error("OWNER_ID belum diset di .env");
+      console.error("OWNER_ID belum diset");
       return;
     }
 
     await bot.api.sendMessage(
       OWNER_ID,
-      "🧪 Test cron jam 00:10 berhasil!"
+      "🧪 Test cron jam 00:15 berhasil!"
     );
 
-    console.log("Cron jalan ke OWNER_ID");
+    console.log("Cron 00:15 jalan");
   } catch (err) {
-    console.error("Cron error:", err);
+    console.error(err);
   }
 });
 
