@@ -1,5 +1,5 @@
 import Groq from "npm:groq-sdk";
-import { kv } from "../../kv.js";
+import { kv } from "../kv.js";
 
 const groq = globalThis._groq ?? new Groq({ apiKey: Deno.env.get("GROQ_API_KEY") });
 globalThis._groq = groq;
