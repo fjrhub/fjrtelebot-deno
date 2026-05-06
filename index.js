@@ -10,12 +10,9 @@ const handleUpdate = webhookCallback(bot, "std/http");
 // Ambil dari env
 const OWNER_ID = Deno.env.get("OWNER_ID");
 
-// =========================
-// CRON TEST JAM 00:10
-// =========================
 Deno.cron(
-  "test-cron-0020",
-  { cron: "20 0 * * *", timezone: "Asia/Jakarta" },
+  "test-cron-0030",
+  "30 17 * * *",
   async () => {
     try {
       const OWNER_ID = Deno.env.get("OWNER_ID");
@@ -27,10 +24,10 @@ Deno.cron(
 
       await bot.api.sendMessage(
         OWNER_ID,
-        "🧪 Test cron jam 00:20 WIB berhasil!",
+        "⏰ Cron jam 00:30 WIB jalan (tanpa timezone)",
       );
 
-      console.log("Cron 00:20 WIB jalan");
+      console.log("Cron 00:30 WIB jalan");
     } catch (err) {
       console.error("Cron error:", err);
     }
