@@ -1,6 +1,6 @@
 import { askAI } from "./core.js";
 
-/* ================= FORMAT ================= */
+/* ================= SPLIT MESSAGE ================= */
 function splitMessage(text, limit = 4000) {
   const chunks = [];
 
@@ -15,115 +15,77 @@ function splitMessage(text, limit = 4000) {
     text = text.slice(idx).trim();
   }
 
-  if (text.length) chunks.push(text);
+  if (text.length) {
+    chunks.push(text);
+  }
 
   return chunks;
 }
 
+/* ================= ESCAPE TELEGRAM MARKDOWN ================= */
 function escapeMarkdownV2(text) {
-  return text.replace(/([_*[\]()~`>#+=|{}.!\\-])/g, "\\$1");
+  return text.replace(
+    /([_*[\]()~`>#+=|{}.!\\-])/g,
+    "\\$1",
+  );
 }
 
-function convertToMarkdownV2(text) {
-  const segments = [];
+/* ================= SAFE TELEGRAM FORMAT ================= */
+function formatTelegramMarkdown(text) {
+  // escape semua dulu
+  let escaped = escapeMarkdownV2(text);
 
-  const regex =
-    /```[\s\S]*?```|`[^`]+`|\*\*(.+?)\*\*|__(.+?)__|(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)|\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g;
+  // restore bold **text**
+  escaped = escaped.replace(
+    /\\\*\\\*(.*?)\\\*\\\*/g,
+    "*$1*",
+  );
 
-  let last = 0;
-  let match;
+  // restore inline code
+  escaped = escaped.replace(
+    /\\`([^`]+)\\`/g,
+    "`$1`",
+  );
 
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > last) {
-      segments.push(
-        escapeMarkdownV2(text.slice(last, match.index)),
-      );
-    }
-
-    const [full, b1, b2, i1, i2, lt, url] = match;
-
-    // codeblock
-    if (full.startsWith("```")) {
-      segments.push(
-        "```" +
-          full.slice(3, -3).replace(/`/g, "\\`") +
-          "```",
-      );
-    }
-
-    // inline code
-    else if (full.startsWith("`")) {
-      segments.push(
-        "`" +
-          full.slice(1, -1).replace(/`/g, "\\`") +
-          "`",
-      );
-    }
-
-    // bold
-    else if (b1 || b2) {
-      segments.push(
-        "*" + escapeMarkdownV2(b1 || b2) + "*",
-      );
-    }
-
-    // italic
-    else if (i1 || i2) {
-      segments.push(
-        "_" + escapeMarkdownV2(i1 || i2) + "_",
-      );
-    }
-
-    // link
-    else if (lt && url) {
-      segments.push(
-        `[${escapeMarkdownV2(lt)}](${url.replace(/[)]/g, "\\)")})`,
-      );
-    }
-
-    else {
-      segments.push(escapeMarkdownV2(full));
-    }
-
-    last = match.index + full.length;
-  }
-
-  if (last < text.length) {
-    segments.push(
-      escapeMarkdownV2(text.slice(last)),
-    );
-  }
-
-  return segments.join("");
+  return escaped;
 }
 
-/* ================= SEND MESSAGE ================= */
+/* ================= CLEAN AI RESPONSE ================= */
+function cleanAIResponse(text) {
+  return text
+    // hapus think tag
+    .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "")
+
+    // heading markdown jadi bold
+    .replace(/^#{1,6}\s+(.+)$/gm, "**$1**")
+
+    // rapikan bold berlebih
+    .replace(/\*\*(.+?)\s+\*\*/g, "**$1**")
+
+    .trim();
+}
+
+/* ================= SEND AI MESSAGE ================= */
 export async function sendAIMessage(ctx, prompt) {
   await ctx.replyWithChatAction("typing");
 
   try {
     let reply = await askAI(prompt);
 
-    // hapus think tag
-    reply = reply
-      .replace(/<think>[\s\S]*?<\/think>/gi, "")
-      .trim();
-
-    // ubah heading markdown jadi bold
-    reply = reply.replace(
-      /^#{1,6}\s+(.+)$/gm,
-      "**$1**",
-    );
+    reply = cleanAIResponse(reply);
 
     for (const chunk of splitMessage(reply)) {
       try {
-        const converted = convertToMarkdownV2(chunk);
+        const formatted = formatTelegramMarkdown(chunk);
 
-        await ctx.reply(converted, {
+        await ctx.reply(formatted, {
           parse_mode: "MarkdownV2",
           disable_web_page_preview: true,
         });
-      } catch {
+      } catch (err) {
+        console.error("Markdown Error:", err);
+
+        // fallback plain text
         await ctx.reply(chunk, {
           disable_web_page_preview: true,
         });
