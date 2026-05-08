@@ -1,77 +1,137 @@
 import { askAI } from "./core.js";
-import { kv } from "../kv.js";
-
-/* ================= HISTORY ================= */
-function getHistoryKey(ctx) {
-  if (ctx.chat.type === "private") return ["history", "user", ctx.from.id];
-  return ["history", "group", ctx.chat.id];
-}
-
-async function getHistory(ctx) {
-  const res = await kv.get(getHistoryKey(ctx));
-  return res.value || [];
-}
-
-async function saveHistory(ctx, messages) {
-  await kv.set(getHistoryKey(ctx), messages.slice(-10));
-}
 
 /* ================= FORMAT ================= */
 function splitMessage(text, limit = 4000) {
   const chunks = [];
+
   while (text.length > limit) {
-    chunks.push(text.slice(0, limit));
-    text = text.slice(limit);
+    let idx = text.lastIndexOf("\n\n", limit);
+
+    if (idx === -1) idx = text.lastIndexOf("\n", limit);
+    if (idx === -1) idx = text.lastIndexOf(" ", limit);
+    if (idx === -1) idx = limit;
+
+    chunks.push(text.slice(0, idx).trim());
+    text = text.slice(idx).trim();
   }
-  if (text) chunks.push(text);
+
+  if (text.length) chunks.push(text);
+
   return chunks;
 }
 
-async function sendMessage(ctx, text) {
-  for (const chunk of splitMessage(text)) {
-    await ctx.reply(chunk).catch(() => {});
-  }
+function escapeMarkdownV2(text) {
+  return text.replace(/([_*[\]()~`>#+=|{}.!\\-])/g, "\\$1");
 }
 
-/* ================= HANDLER ================= */
-async function handleAI(ctx, input) {
+function convertToMarkdownV2(text) {
+  const segments = [];
+
+  const regex =
+    /```[\s\S]*?```|`[^`]+`|\*\*(.+?)\*\*|__(.+?)__|(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)|\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g;
+
+  let last = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > last) {
+      segments.push(
+        escapeMarkdownV2(text.slice(last, match.index)),
+      );
+    }
+
+    const [full, b1, b2, i1, i2, lt, url] = match;
+
+    // codeblock
+    if (full.startsWith("```")) {
+      segments.push(
+        "```" +
+          full.slice(3, -3).replace(/`/g, "\\`") +
+          "```",
+      );
+    }
+
+    // inline code
+    else if (full.startsWith("`")) {
+      segments.push(
+        "`" +
+          full.slice(1, -1).replace(/`/g, "\\`") +
+          "`",
+      );
+    }
+
+    // bold
+    else if (b1 || b2) {
+      segments.push(
+        "*" + escapeMarkdownV2(b1 || b2) + "*",
+      );
+    }
+
+    // italic
+    else if (i1 || i2) {
+      segments.push(
+        "_" + escapeMarkdownV2(i1 || i2) + "_",
+      );
+    }
+
+    // link
+    else if (lt && url) {
+      segments.push(
+        `[${escapeMarkdownV2(lt)}](${url.replace(/[)]/g, "\\)")})`,
+      );
+    }
+
+    else {
+      segments.push(escapeMarkdownV2(full));
+    }
+
+    last = match.index + full.length;
+  }
+
+  if (last < text.length) {
+    segments.push(
+      escapeMarkdownV2(text.slice(last)),
+    );
+  }
+
+  return segments.join("");
+}
+
+/* ================= SEND MESSAGE ================= */
+export async function sendAIMessage(ctx, prompt) {
   await ctx.replyWithChatAction("typing");
 
-  const history = await getHistory(ctx);
+  try {
+    let reply = await askAI(prompt);
 
-  const messages = [
-    ...history,
-    { role: "user", content: input },
-  ];
+    // hapus think tag
+    reply = reply
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .trim();
 
-  const reply = await askAI(messages);
+    // ubah heading markdown jadi bold
+    reply = reply.replace(
+      /^#{1,6}\s+(.+)$/gm,
+      "**$1**",
+    );
 
-  await saveHistory(ctx, [
-    ...history,
-    { role: "user", content: input },
-    { role: "assistant", content: reply },
-  ]);
+    for (const chunk of splitMessage(reply)) {
+      try {
+        const converted = convertToMarkdownV2(chunk);
 
-  await sendMessage(ctx, reply);
+        await ctx.reply(converted, {
+          parse_mode: "MarkdownV2",
+          disable_web_page_preview: true,
+        });
+      } catch {
+        await ctx.reply(chunk, {
+          disable_web_page_preview: true,
+        });
+      }
+    }
+  } catch (err) {
+    console.error("AI ERROR:", err);
+
+    await ctx.reply("❌ Gagal mengambil jawaban AI.");
+  }
 }
-
-/* ================= EXPORT ================= */
-export default (bot) => {
-  bot.command("ai", async (ctx) => {
-    const text = ctx.message?.text || "";
-    const input = text.replace(/^\/ai(@\w+)?\s*/, "").trim();
-
-    if (!input) {
-      return ctx.reply("❌ Masukkan pertanyaan.\nContoh: /ai Apa itu trading?");
-    }
-
-    await handleAI(ctx, input);
-  });
-
-  // reply ke bot
-  bot.on("message:text", async (ctx) => {
-    if (ctx.message.reply_to_message?.from?.id === ctx.me.id) {
-      await handleAI(ctx, ctx.message.text);
-    }
-  });
-};
