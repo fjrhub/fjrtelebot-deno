@@ -1,7 +1,7 @@
 import { askAI } from "../ai/core.js";
 
 export function registerDailyCron(bot) {
-  Deno.cron("daily-ai", "43 23 * * *", async () => {
+  Deno.cron("daily-ai", "50 16 * * *", async () => {
     try {
       const OWNER_ID = Deno.env.get("OWNER_ID");
 
@@ -12,7 +12,7 @@ export function registerDailyCron(bot) {
 
       await bot.api.sendMessage(OWNER_ID, answer);
 
-      console.log("Cron AI 23:41 WIB jalan");
+      console.log("Cron AI 23:50 WIB jalan");
     } catch (err) {
       console.error(err);
     }
