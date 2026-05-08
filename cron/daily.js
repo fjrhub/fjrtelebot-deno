@@ -1,18 +1,20 @@
 import { askAI } from "../ai/core.js";
 
 export function registerDailyCron(bot) {
-  Deno.cron("daily-ai", "18 19 * * *", async () => {
-  try {
-    const OWNER_ID = Deno.env.get("OWNER_ID");
+  Deno.cron("daily-ai", "43 23 * * *", async () => {
+    try {
+      const OWNER_ID = Deno.env.get("OWNER_ID");
 
-    const question = "Berikan insight singkat tentang trading hari ini";
-    const answer = await askAI(question);
+      const question =
+        "Berikan insight singkat tentang trading hari ini";
 
-    await bot.api.sendMessage(OWNER_ID, answer);
+      const answer = await askAI(question);
 
-    console.log("Cron AI 02:18 WIB jalan");
-  } catch (err) {
-    console.error(err);
-  }
-});
+      await bot.api.sendMessage(OWNER_ID, answer);
+
+      console.log("Cron AI 23:41 WIB jalan");
+    } catch (err) {
+      console.error(err);
+    }
+  });
 }
