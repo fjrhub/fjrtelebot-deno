@@ -1,4 +1,4 @@
-import { askAI, cleanAIResponse, formatTelegramMarkdown } from "./ai.js";
+import { askAI, cleanAIResponse, formatTelegramMarkdown } from "../ai/ai.js";
 
 export function registerDailyCron(bot) {
   Deno.cron("daily-ai", "0 17 * * *", async () => {
