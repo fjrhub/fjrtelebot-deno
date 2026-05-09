@@ -1,98 +1,70 @@
 import { askAI } from "./core.js";
 
 /* ================= SPLIT MESSAGE ================= */
-function splitMessage(text, limit = 4000) {
+export function splitMessage(text, limit = 4000) {
   const chunks = [];
-
   while (text.length > limit) {
     let idx = text.lastIndexOf("\n\n", limit);
-
     if (idx === -1) idx = text.lastIndexOf("\n", limit);
     if (idx === -1) idx = text.lastIndexOf(" ", limit);
     if (idx === -1) idx = limit;
-
     chunks.push(text.slice(0, idx).trim());
     text = text.slice(idx).trim();
   }
-
-  if (text.length) {
-    chunks.push(text);
-  }
-
+  if (text.length) chunks.push(text);
   return chunks;
 }
 
 /* ================= ESCAPE TELEGRAM MARKDOWN ================= */
-function escapeMarkdownV2(text) {
-  return text.replace(
-    /([_*[\]()~`>#+=|{}.!\\-])/g,
-    "\\$1",
-  );
+export function escapeMarkdownV2(text) {
+  return text.replace(/([_*[\]()~`>#+=|{}.!\\-])/g, "\\$1");
 }
 
 /* ================= SAFE TELEGRAM FORMAT ================= */
-function formatTelegramMarkdown(text) {
+export function formatTelegramMarkdown(text) {
   let escaped = escapeMarkdownV2(text);
-
-  escaped = escaped.replace(
-    /\\\*\\\*(.*?)\\\*\\\*/g,
-    "*$1*",
-  );
-
-  escaped = escaped.replace(
-    /\\`([^`]+)\\`/g,
-    "`$1`",
-  );
-
+  // Restore bold **text** -> *text* (MarkdownV2 pakai * untuk bold)
+  escaped = escaped.replace(/\\\*\\\*(.*?)\\\*\\\*/g, "*$1*");
+  // Restore inline code
+  escaped = escaped.replace(/\\`([^`]+)\\`/g, "`$1`");
   return escaped;
 }
 
 /* ================= CLEAN AI RESPONSE ================= */
-function cleanAIResponse(text) {
+export function cleanAIResponse(text) {
   return text
-    // hapus think tag: <think>...</think> atau <think>...</think>
+    // Hapus  <think>...< /think> (handle dengan/ tanpa attribute)
     .replace(/(?:<think\b[^>]*>|<think>)[\s\S]*?<\/think>/gi, "")
-    
-    // fallback: hapus sisa tag think yang mungkin lolos
+    // Fallback hapus sisa tag yang mungkin lolos
     .replace(/<think\b[^>]*>|<\/think>|<think>/gi, "")
-
-    // heading markdown jadi bold
+    // Heading markdown jadi bold
     .replace(/^#{1,6}\s+(.+)$/gm, "**$1**")
-
-    // rapikan bold berlebih
+    // Rapikan spasi dalam bold
     .replace(/\*\*(.+?)\s+\*\*/g, "**$1**")
-
     .trim();
 }
 
-/* ================= SEND AI MESSAGE ================= */
+/* ================= SEND AI MESSAGE (KHUSUS CHAT BIASA) ================= */
 export async function sendAIMessage(ctx, prompt) {
   await ctx.replyWithChatAction("typing");
-
   try {
     let reply = await askAI(prompt);
-
     reply = cleanAIResponse(reply);
 
     for (const chunk of splitMessage(reply)) {
       try {
         const formatted = formatTelegramMarkdown(chunk);
-
         await ctx.reply(formatted, {
           parse_mode: "MarkdownV2",
           disable_web_page_preview: true,
         });
       } catch (err) {
         console.error("Markdown Error:", err);
-
-        await ctx.reply(chunk, {
-          disable_web_page_preview: true,
-        });
+        await ctx.reply(chunk, { disable_web_page_preview: true });
       }
     }
   } catch (err) {
     console.error("AI ERROR:", err);
-
     await ctx.reply("❌ Gagal mengambil jawaban AI.");
   }
 }

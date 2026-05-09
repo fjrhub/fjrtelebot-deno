@@ -1,33 +1,6 @@
-import { askAI } from "../ai/core.js";
+// Sesuaikan path jika ai.js tidak sefolder dengan daily.js
+import { askAI, cleanAIResponse, formatTelegramMarkdown } from "./ai.js";
 
-/* ================= UTILS (Bersihin & Format) ================= */
-function cleanAIResponse(text) {
-  return text
-    // Hapus <think> atau <think attr>
-    .replace(/(?:<think\b[^>]*>|<think>)[\s\S]*?<\/think>/gi, "")
-    // Fallback hapus sisa tag
-    .replace(/<think\b[^>]*>|<\/think>|<think>/gi, "")
-    // Heading jadi bold
-    .replace(/^#{1,6}\s+(.+)$/gm, "**$1**")
-    // Rapikan spasi dalam bold
-    .replace(/\*\*(.+?)\s+\*\*/g, "**$1**")
-    .trim();
-}
-
-function escapeMarkdownV2(text) {
-  return text.replace(/([_*[\]()~`>#+=|{}.!\\-])/g, "\\$1");
-}
-
-function formatTelegramMarkdown(text) {
-  let escaped = escapeMarkdownV2(text);
-  // Restore bold
-  escaped = escaped.replace(/\\\*\\\*(.*?)\\\*\\\*/g, "*$1*");
-  // Restore inline code
-  escaped = escaped.replace(/\\`([^`]+)\\`/g, "`$1`");
-  return escaped;
-}
-
-/* ================= DAILY CRON ================= */
 export function registerDailyCron(bot) {
   Deno.cron("daily-ai", "45 16 * * *", async () => {
     try {
@@ -36,16 +9,14 @@ export function registerDailyCron(bot) {
 
       const question = "Berikan insight singkat tentang trading hari ini";
       
-      // 1. Ambil jawaban AI
+      // 1. Ambil response mentah
       let answer = await askAI(question);
       
-      // 2. Bersihkan <think> & rapikan
+      // 2. Bersihkan & format pakai fungsi dari ai.js
       answer = cleanAIResponse(answer);
-      
-      // 3. Escape & format untuk Telegram MarkdownV2
       const formatted = formatTelegramMarkdown(answer);
 
-      // 4. Kirim dengan parse_mode aktif
+      // 3. Kirim dengan MarkdownV2 aktif
       await bot.api.sendMessage(OWNER_ID, formatted, {
         parse_mode: "MarkdownV2",
         disable_web_page_preview: true,
@@ -54,14 +25,6 @@ export function registerDailyCron(bot) {
       console.log("✅ Cron AI 23:45 WIB (TEST) berhasil dikirim");
     } catch (err) {
       console.error("❌ Cron AI Error:", err);
-      
-      // Fallback plain text kalau markdown error
-      try {
-        const OWNER_ID = Deno.env.get("OWNER_ID");
-        await bot.api.sendMessage(OWNER_ID, "❌ Gagal format markdown. Cek log.", {
-          disable_web_page_preview: true,
-        });
-      } catch {}
     }
   });
 }
