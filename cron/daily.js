@@ -1,7 +1,7 @@
 import { askAI, cleanAIResponse, formatTelegramMarkdown } from "../ai/ai.js";
 
 export function registerDailyCron(bot) {
-  Deno.cron("daily-ai", "0 17 * * *", async () => {
+  Deno.cron("daily-ai", "7 17 * * *", async () => {
     try {
       const OWNER_ID = Deno.env.get("OWNER_ID");
       if (!OWNER_ID) throw new Error("OWNER_ID env tidak ditemukan");
@@ -17,7 +17,7 @@ export function registerDailyCron(bot) {
         disable_web_page_preview: true,
       });
 
-      console.log("✅ Cron AI 00:00 WIB berhasil dikirim");
+      console.log("✅ Cron AI 00:07 WIB berhasil dikirim");
     } catch (err) {
       console.error("❌ Cron AI Error:", err);
     }
