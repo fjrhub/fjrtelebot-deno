@@ -7,15 +7,11 @@ export function registerDailyCron(bot) {
       if (!OWNER_ID) throw new Error("OWNER_ID env tidak ditemukan");
 
       const question = "Berikan insight singkat tentang trading hari ini";
-      
-      // 1. Ambil response mentah
+
       let answer = await askAI(question);
-      
-      // 2. Bersihkan & format pakai fungsi dari ai.js
       answer = cleanAIResponse(answer);
       const formatted = formatTelegramMarkdown(answer);
 
-      // 3. Kirim dengan MarkdownV2 aktif
       await bot.api.sendMessage(OWNER_ID, formatted, {
         parse_mode: "MarkdownV2",
         disable_web_page_preview: true,
