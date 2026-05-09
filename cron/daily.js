@@ -1,8 +1,7 @@
-// Sesuaikan path jika ai.js tidak sefolder dengan daily.js
 import { askAI, cleanAIResponse, formatTelegramMarkdown } from "./ai.js";
 
 export function registerDailyCron(bot) {
-  Deno.cron("daily-ai", "45 16 * * *", async () => {
+  Deno.cron("daily-ai", "0 17 * * *", async () => {
     try {
       const OWNER_ID = Deno.env.get("OWNER_ID");
       if (!OWNER_ID) throw new Error("OWNER_ID env tidak ditemukan");
@@ -22,7 +21,7 @@ export function registerDailyCron(bot) {
         disable_web_page_preview: true,
       });
 
-      console.log("✅ Cron AI 23:45 WIB (TEST) berhasil dikirim");
+      console.log("✅ Cron AI 00:00 WIB berhasil dikirim");
     } catch (err) {
       console.error("❌ Cron AI Error:", err);
     }
