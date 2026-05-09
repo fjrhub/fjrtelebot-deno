@@ -32,16 +32,13 @@ function escapeMarkdownV2(text) {
 
 /* ================= SAFE TELEGRAM FORMAT ================= */
 function formatTelegramMarkdown(text) {
-  // escape semua dulu
   let escaped = escapeMarkdownV2(text);
 
-  // restore bold **text**
   escaped = escaped.replace(
     /\\\*\\\*(.*?)\\\*\\\*/g,
     "*$1*",
   );
 
-  // restore inline code
   escaped = escaped.replace(
     /\\`([^`]+)\\`/g,
     "`$1`",
@@ -53,8 +50,11 @@ function formatTelegramMarkdown(text) {
 /* ================= CLEAN AI RESPONSE ================= */
 function cleanAIResponse(text) {
   return text
-    // hapus think tag
-    .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "")
+    // hapus think tag: <think>...</think> atau <think>...</think>
+    .replace(/(?:<think\b[^>]*>|<think>)[\s\S]*?<\/think>/gi, "")
+    
+    // fallback: hapus sisa tag think yang mungkin lolos
+    .replace(/<think\b[^>]*>|<\/think>|<think>/gi, "")
 
     // heading markdown jadi bold
     .replace(/^#{1,6}\s+(.+)$/gm, "**$1**")
@@ -85,7 +85,6 @@ export async function sendAIMessage(ctx, prompt) {
       } catch (err) {
         console.error("Markdown Error:", err);
 
-        // fallback plain text
         await ctx.reply(chunk, {
           disable_web_page_preview: true,
         });
