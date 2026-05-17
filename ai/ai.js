@@ -3,8 +3,7 @@ import { kv } from "../kv.js";
 
 /* ================= GROQ CLIENT ================= */
 const groq =
-  globalThis._groq ??
-  new Groq({ apiKey: Deno.env.get("GROQ_API_KEY") });
+  globalThis._groq ?? new Groq({ apiKey: Deno.env.get("GROQ_API_KEY") });
 
 globalThis._groq = groq;
 
@@ -16,7 +15,7 @@ export async function askAI(prompt) {
       messages: [
         {
           role: "user",
-          content: `Jawab singkat, jelas, gunakan bahasa Indonesia.\n\n${prompt}`,
+          content: prompt,
         },
       ],
       temperature: 1,
@@ -70,20 +69,22 @@ export function formatTelegramMarkdown(text) {
 
 /* ================= CLEAN AI RESPONSE ================= */
 export function cleanAIResponse(text) {
-  return text
-    // Hapus <think> atau <think attr>...</think>
-    .replace(/(?:<think\b[^>]*>|<think>)[\s\S]*?<\/think>/gi, "")
+  return (
+    text
+      // Hapus <think> atau <think attr>...</think>
+      .replace(/(?:<think\b[^>]*>|<think>)[\s\S]*?<\/think>/gi, "")
 
-    // Fallback hapus sisa tag
-    .replace(/<think\b[^>]*>|<\/think>|<think>/gi, "")
+      // Fallback hapus sisa tag
+      .replace(/<think\b[^>]*>|<\/think>|<think>/gi, "")
 
-    // Heading markdown jadi bold
-    .replace(/^#{1,6}\s+(.+)$/gm, "**$1**")
+      // Heading markdown jadi bold
+      .replace(/^#{1,6}\s+(.+)$/gm, "**$1**")
 
-    // Rapikan spasi dalam bold
-    .replace(/\*\*(.+?)\s+\*\*/g, "**$1**")
+      // Rapikan spasi dalam bold
+      .replace(/\*\*(.+?)\s+\*\*/g, "**$1**")
 
-    .trim();
+      .trim()
+  );
 }
 
 /* ================= SEND AI MESSAGE ================= */
