@@ -9,7 +9,7 @@ export default (bot) => {
         );
       }
 
-      // Validasi karakter aman (tambah =)
+      // Validasi karakter aman (sudah include tanda =)
       if (!/^[0-9+\-*/().%\s=]+$/.test(input)) {
         return ctx.reply("Hanya angka dan operator matematika yang diizinkan.");
       }
@@ -20,14 +20,19 @@ export default (bot) => {
       // Hitung ekspresi
       const result = Function(`"use strict"; return (${expression})`)();
 
-      if (result === undefined || Number.isNaN(result)) {
+      if (result === undefined || Number.isNaN(result) || !Number.isFinite(result)) {
         return ctx.reply("Perhitungan tidak valid.");
       }
+
+      // Format angka: pemisah ribuan pakai titik, desimal pakai koma (standar Indonesia)
+      const formattedResult = Number(result).toLocaleString('id-ID', {
+        maximumFractionDigits: 10
+      });
 
       await ctx.reply(
         `🧮 Calculator\n\n` +
         `Expression: ${input}\n` +
-        `Result: ${result}`
+        `Result: ${formattedResult}`
       );
 
     } catch (err) {
