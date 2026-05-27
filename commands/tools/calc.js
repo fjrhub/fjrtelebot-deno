@@ -5,7 +5,7 @@ export default (bot) => {
 
       if (!input) {
         return ctx.reply(
-          "Contoh:\n/calc 25*12+100\n/calc (50/2)+7\n/calc 1+1="
+          "Contoh:\n/calc 25*12+100\n/calc (50/2)+7"
         );
       }
 
