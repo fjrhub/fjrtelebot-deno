@@ -5,17 +5,24 @@ export default (bot) => {
 
       if (!input) {
         return ctx.reply(
-          "Contoh:\n/calc 25*12+100\n/calc (50/2)+7"
+          "Contoh:\n/calc 25*12+100\n/calc (50/2)+7\n/calc 100.000+50.000\n/calc 1,5*2"
         );
       }
 
-      // Validasi karakter aman (sudah include tanda =)
-      if (!/^[0-9+\-*/().%\s=]+$/.test(input)) {
+      // Validasi karakter aman (sudah include tanda =, tambah koma untuk desimal)
+      if (!/^[0-9+\-*/().,%\s=]+$/.test(input)) {
         return ctx.reply("Hanya angka dan operator matematika yang diizinkan.");
       }
 
       // Hapus tanda = di akhir sebelum evaluasi
-      const expression = input.replace(/=+\s*$/, "");
+      let expression = input.replace(/=+\s*$/, "");
+
+      // Normalisasi format angka Indonesia:
+      // - Titik (.) sebagai pemisah ribuan → dihapus
+      // - Koma (,) sebagai pemisah desimal → diganti jadi titik (.)
+      expression = expression
+        .replace(/\./g, '')      // Hapus semua titik (thousands separator)
+        .replace(/,/g, '.');     // Ubah koma jadi titik (decimal separator)
 
       // Hitung ekspresi
       const result = Function(`"use strict"; return (${expression})`)();
