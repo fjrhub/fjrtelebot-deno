@@ -2,7 +2,7 @@ export default (bot) => {
   bot.command("btc", async (ctx) => {
     try {
       const res = await fetch(
-        "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether-gold,hyperliquid,binancecoin&vs_currencies=usd,idr"
+        "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether-gold,hyperliquid,bittensor,solana&vs_currencies=usd,idr"
       );
       const data = await res.json();
 
@@ -11,7 +11,8 @@ export default (bot) => {
         { id: "ethereum", symbol: "ETH" },
         { id: "tether-gold", symbol: "XAUT" },
         { id: "hyperliquid", symbol: "HYPE" },
-        { id: "binancecoin", symbol: "BNB" },
+        { id: "bittensor", symbol: "TAO" },
+        { id: "solana", symbol: "SOL" },
       ];
 
       const formatUSD = (num) =>
@@ -25,7 +26,7 @@ export default (bot) => {
           maximumFractionDigits: 0,
         }).format(num);
 
-      let rows = [];
+      const rows = [];
 
       for (const coin of coins) {
         const price = data[coin.id];
@@ -41,12 +42,12 @@ export default (bot) => {
         });
       }
 
-      // cari panjang max biar auto rapi
-      const maxSymbol = Math.max(...rows.map(r => r.symbol.length));
-      const maxUsd = Math.max(...rows.map(r => r.usd.length));
-      const maxIdr = Math.max(...rows.map(r => r.idr.length));
+      const maxSymbol = Math.max(...rows.map((r) => r.symbol.length));
+      const maxUsd = Math.max(...rows.map((r) => r.usd.length));
+      const maxIdr = Math.max(...rows.map((r) => r.idr.length));
 
       let table = "";
+
       for (const r of rows) {
         table += `${r.symbol.padEnd(maxSymbol)}  ${r.usd.padStart(maxUsd)} │ ${r.idr.padStart(maxIdr)}\n`;
       }
@@ -58,7 +59,9 @@ export default (bot) => {
         "```\n" +
         `_Source: CoinGecko_`;
 
-      await ctx.reply(message, { parse_mode: "Markdown" });
+      await ctx.reply(message, {
+        parse_mode: "Markdown",
+      });
     } catch (err) {
       console.error("Crypto price fetch error:", err);
       await ctx.reply("❌ Gagal mengambil harga crypto. Coba lagi nanti.");
