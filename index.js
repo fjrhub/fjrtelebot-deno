@@ -1,14 +1,14 @@
 import "jsr:@std/dotenv/load";
-import { webhookCallback } from "npm:grammy";
-import { bot } from "./bot.js";
-import { registerHandlers } from "./handler.js";
+import { webhookCallback, Bot } from "npm:grammy";
 
-registerHandlers(bot);
+const bot = new Bot(Deno.env.get("BOT_TOKEN"));
 
-// TAMBAHKAN OPSI onTimeout: "return" UNTUK MENCEGAH ERROR TIMEOUT
+bot.command("ping", (ctx) => ctx.reply("🏓 Pong!"));
+bot.command("start", (ctx) => ctx.reply("✅ Bot is working!"));
+
 const handleUpdate = webhookCallback(bot, "std/http", {
   onTimeout: "return",
-  timeoutMilliseconds: 10000, // 10 detik (bisa dinaikkan jika perlu)
+  timeoutMilliseconds: 10000,
 });
 
 Deno.serve(handleUpdate);
