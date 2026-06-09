@@ -1,7 +1,7 @@
 import "jsr:@std/dotenv/load";
 import { webhookCallback, Bot } from "npm:grammy";
 
-const bot = new Bot(Deno.env.get("BOT_TOKEN"));
+const bot = new Bot(Deno.env.get("TOKEN"));
 
 bot.command("ping", (ctx) => ctx.reply("🏓 Pong!"));
 bot.command("start", (ctx) => ctx.reply("✅ Bot is working!"));
