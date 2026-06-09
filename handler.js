@@ -3,7 +3,7 @@ import start from "./commands/tools/start.js";
 import qr from "./commands/tools/qr.js";
 import history from "./commands/ai-chat/history.js";
 import reset from "./commands/ai-chat/reset.js";
-import ai from "./commands/ai-chat/ai.js";
+// import ai from "./commands/ai-chat/ai.js";
 import github from "./commands/tools/github.js";
 import calc from "./commands/tools/calc.js";
 import setver from "./commands/tools/setver.js";
@@ -39,5 +39,5 @@ export const registerHandlers = (bot) => {
   help(bot);
   format(bot);
   resetver(bot);
-  ai(bot);
+  // ai(bot);
 };
