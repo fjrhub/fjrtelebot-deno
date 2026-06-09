@@ -108,21 +108,17 @@ async function sendMarkdownMessage(ctx, text) {
 /* ================= MODEL FETCHER (OPTIMIZED FOR SERVERLESS) ================= */
 async function getCurrentModel() {
   try {
-    // Opsi { cached: true } memanfaatkan edge cache Deno KV.
-    // Ini otomatis mengurangi frekuensi read ke database utama (konsistensi eventual ~1 jam),
-    // sehingga sangat hemat resource untuk serverless tanpa perlu simpan di RAM.
     const res = await kv.get(["ai_model"], { cached: true });
     return res.value || "qwen/qwen3-32b";
   } catch (err) {
     console.error("[ModelFetch] Error:", err.message);
-    return "qwen/qwen3-32b"; // Fallback aman
+    return "qwen/qwen3-32b";
   }
 }
 
 /* ================= GROQ REQUEST ================= */
 async function sendToGroq(messages) {
   try {
-    // Fetch model setiap request, tapi dibackup oleh Deno KV Edge Cache
     const model = await getCurrentModel();
     
     const res = await groq.chat.completions.create({
@@ -205,8 +201,18 @@ function buildSystemPrompt(ctx) {
 - Location: Mojokerto, Jawa Timur`;
 }
 
-/* ================= CORE AI HANDLER ================= */
+/* ================= CORE AI HANDLER (NON-BLOCKING) ================= */
 async function handleAICore(ctx, inputText) {
+  // Langsung jalankan di background tanpa await apapun.
+  // Ini menjamin handler webhook selesai dalam < 1 milidetik.
+  runAIBackground(ctx, inputText).catch((err) => {
+    console.error("[AI] Background uncaught error:", err);
+    ctx.reply("❌ Terjadi error tidak terduga.").catch(() => {});
+  });
+}
+
+// Pindahkan semua logika ke fungsi terpisah
+async function runAIBackground(ctx, inputText) {
   await ctx.replyWithChatAction("typing");
   const history = await getHistory(ctx);
   const systemPrompt = buildSystemPrompt(ctx);
@@ -222,48 +228,41 @@ async function handleAICore(ctx, inputText) {
     { role: "user", content: inputText },
   ];
 
-  const run = async () => {
-    let reply;
-    try {
-      reply = await sendToGroq(messages);
-    } catch (err) {
-      if (err.isRateLimit) {
-        await ctx.reply("⏳ Rate limit. Coba lagi sebentar.").catch(() => {});
-        return;
-      }
-      if (err.isTooLarge) {
-        try {
-          reply = await sendToGroq([
-            { role: "system", content: systemPrompt },
-            { role: "user", content: inputText },
-          ]);
-        } catch (retryErr) {
-          if (retryErr.isRateLimit) {
-            await ctx.reply("⏳ Rate limit. Coba lagi sebentar.").catch(() => {});
-          } else {
-            await ctx.reply("❌ Terjadi error saat menghubungi AI.").catch(() => {});
-          }
-          return;
-        }
-      } else {
-        console.error("[AI] Unexpected error:", err);
-        await ctx.reply("❌ Terjadi error.").catch(() => {});
-        return;
-      }
+  let reply;
+  try {
+    reply = await sendToGroq(messages);
+  } catch (err) {
+    if (err.isRateLimit) {
+      await ctx.reply("⏳ Rate limit. Coba lagi sebentar.").catch(() => {});
+      return;
     }
-    
-    await saveHistory(ctx, [
-      ...history,
-      { role: "user", content: inputText },
-      { role: "ai", content: reply },
-    ]);
-    await sendMarkdownMessage(ctx, reply);
-  };
+    if (err.isTooLarge) {
+      try {
+        reply = await sendToGroq([
+          { role: "system", content: systemPrompt },
+          { role: "user", content: inputText },
+        ]);
+      } catch (retryErr) {
+        if (retryErr.isRateLimit) {
+          await ctx.reply("⏳ Rate limit. Coba lagi sebentar.").catch(() => {});
+        } else {
+          await ctx.reply("❌ Terjadi error saat menghubungi AI.").catch(() => {});
+        }
+        return;
+      }
+    } else {
+      console.error("[AI] Unexpected error:", err);
+      await ctx.reply("❌ Terjadi error.").catch(() => {});
+      return;
+    }
+  }
   
-  run().catch((err) => {
-    console.error("[AI] run() uncaught error:", err);
-    ctx.reply("❌ Terjadi error tidak terduga.").catch(() => {});
-  });
+  await saveHistory(ctx, [
+    ...history,
+    { role: "user", content: inputText },
+    { role: "ai", content: reply },
+  ]);
+  await sendMarkdownMessage(ctx, reply);
 }
 
 /* ================= HELP MESSAGE ================= */
