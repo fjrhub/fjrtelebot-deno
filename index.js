@@ -7,6 +7,10 @@ import { registerCrons } from "./cron/index.js";
 registerHandlers(bot);
 registerCrons(bot);
 
-const handleUpdate = webhookCallback(bot, "std/http");
+// TAMBAHKAN OPSI onTimeout: "return" UNTUK MENCEGAH ERROR TIMEOUT
+const handleUpdate = webhookCallback(bot, "std/http", {
+  onTimeout: "return",
+  timeoutMilliseconds: 10000, // 10 detik (bisa dinaikkan jika perlu)
+});
 
 Deno.serve(handleUpdate);
