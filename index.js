@@ -4,7 +4,6 @@ import { bot } from "./bot.js";
 import { registerHandlers } from "./handler.js";
 
 registerHandlers(bot);
-registerCrons(bot);
 
 // TAMBAHKAN OPSI onTimeout: "return" UNTUK MENCEGAH ERROR TIMEOUT
 const handleUpdate = webhookCallback(bot, "std/http", {
