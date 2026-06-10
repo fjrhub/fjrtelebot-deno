@@ -14,11 +14,19 @@ export default (bot) => {
     };
 
     // =========================
-    // Helper rupiah -> number
+    // Helper rupiah -> number (DIPERBAIKI)
     // =========================
     const toNumber = (val) => {
       if (!val || val === "-") return 0;
-      return parseInt(val.replace(/[^\d]/g, "")) || 0;
+      
+      // 1. Buang bagian desimal (koma dan angka di belakangnya, misal ",00")
+      let clean = String(val).replace(/,.*$/, "");
+      // 2. Buang pemisah ribuan (titik)
+      clean = clean.replace(/\./g, "");
+      // 3. Buang karakter selain angka (seperti 'Rp' atau spasi)
+      clean = clean.replace(/[^\d]/g, "");
+      
+      return parseInt(clean) || 0;
     };
 
     // =========================
@@ -50,33 +58,33 @@ export default (bot) => {
     ]);
 
     const rawToken = getValue([
-      /STROOM\/?TOKEN\s*\n\s*([\d\s]+)/i, // Fleksibel untuk "STROOM/TOKEN" atau "STROOM TOKEN"
-      /(\d[\d\s]{15,})/,                   // Fallback jika ada deretan angka panjang
+      /STROOM\/?TOKEN\s*\n\s*([\d\s]+)/i,
+      /(\d[\d\s]{15,})/,
     ]);
 
     const token = formatToken(rawToken);
 
     const meter = getValue([
-      /NO\s*METER\s*\n\s*(\d+)/i,          // Fleksibel untuk "NO METER" atau "NOMOR METER"
+      /NO\s*METER\s*\n\s*(\d+)/i,
     ]);
 
     const customerName = getValue([
-      /NAMA\s*\n\s*(.+)/i,                 // Fleksibel untuk "NAMA" atau "Nama Pelanggan"
+      /NAMA\s*\n\s*(.+)/i,
       /Nama\s+Pelanggan:\s*(.+)/i,
     ]);
 
     const tarif = getValue([
-      /TARIF\/?DAYA\s*\n\s*(.+)/i,         // Fleksibel untuk "TARIF/DAYA" atau "TARIF DAYA"
+      /TARIF\/?DAYA\s*\n\s*(.+)/i,
       /Tarif\/Daya\s*\n\s*(.+)/i,
     ]);
 
     const kwh = getValue([
-      /JML\s*KWH\s*\n\s*(.+)/i,            // Fleksibel untuk "JML KWH"
-      /JUMLAH\s*KWH\s*\n\s*(.+)/i,         // Fleksibel untuk "JUMLAH KWH"
+      /JML\s*KWH\s*\n\s*(.+)/i,
+      /JUMLAH\s*KWH\s*\n\s*(.+)/i,
     ]);
 
     const stroom = getValue([
-      /RP\s*STROOM\/?TOKEN\s*\n\s*(.+)/i,  // Fleksibel untuk "RP STROOM/TOKEN"
+      /RP\s*STROOM\/?TOKEN\s*\n\s*(.+)/i,
     ]);
 
     const pbjt = getValue([
@@ -84,7 +92,7 @@ export default (bot) => {
     ]);
 
     // =========================
-    // Hitung total
+    // Hitung total otomatis
     // =========================
     const totalNumber = toNumber(stroom) + toNumber(pbjt);
     const total = totalNumber
