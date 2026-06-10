@@ -11,6 +11,7 @@ import encrypt from "./commands/tools/enc.js";
 import decrypt from "./commands/tools/dec.js";
 import help from "./commands/tools/help.js";
 import format from "./commands/tools/format.js";
+import format1 from "./commands/tools/format1.js";
 import resetver from "./commands/tools/resetver.js";
 import tagall from "./commands/tools/tagall.js";
 import cekmodel from "./commands/ai-chat/cekmodel.js";
@@ -38,6 +39,7 @@ export const registerHandlers = (bot) => {
   decrypt(bot);
   help(bot);
   format(bot);
+  format1(bot);
   resetver(bot);
   ai(bot);
 };
