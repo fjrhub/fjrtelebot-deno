@@ -19,13 +19,6 @@ export default (bot) => {
 *💰 Finance:*
 • /btc \- Get latest Bitcoin price
 
-*⚙️ System & Owner:*
-• /start \- Start bot interaction
-• /setver \- Set bot version (Admin)
-• /resetver \- Reset bot version (Admin)
-• /historyall \- View all logs (Owner)
-• /resetall \- Clear all data (Owner)
-
 *✨ Key Features:*
 • *Dual-History:* Separate history for Private & Group chats
 • *Auto-Trim:* Keeps memory usage efficient
