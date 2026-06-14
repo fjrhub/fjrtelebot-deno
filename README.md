@@ -181,7 +181,6 @@ Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
 
 **fjrhub**
 - GitHub: [@fjrhub](https://github.com/fjrhub)
-- Telegram: [@mynameisfjr](https://t.me/mynameisfjr)
 
 ---
 
