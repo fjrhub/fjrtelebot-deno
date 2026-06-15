@@ -4,6 +4,7 @@ export const repos = [
   { name: "yt-dlp", url: "https://github.com/yt-dlp/yt-dlp" },
   { name: "aves", url: "https://github.com/deckerst/aves" },
   { name: "Aegis", url: "https://github.com/beemdevelopment/Aegis" },
+  { name: "ImageToolbox", url: "https://github.com/T8RIN/ImageToolbox" },
 ];
 
 export function parseGithubUrl(url) {
