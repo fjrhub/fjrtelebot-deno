@@ -12,7 +12,7 @@ if (OWNER_ID) {
   try {
     await bot.api.sendMessage(
       OWNER_ID,
-      "🚀 Service Status\n\nDeployment completed successfully.\nBot is online and operational.",
+      "🚀 Bot started successfully and is now online."
     );
   } catch (error) {
     console.error("Failed to notify owner:", error);
