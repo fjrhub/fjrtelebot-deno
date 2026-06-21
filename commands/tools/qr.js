@@ -12,7 +12,7 @@ export default (bot) => {
 
       if (!text) {
         return ctx.reply(
-          "📝 Contoh penggunaan:\n<code>/qr Halo Dunia</code>",
+          "📝 Usage example:\n<code>/qr Hello World</code>",
           {
             parse_mode: "HTML",
           }
@@ -21,7 +21,7 @@ export default (bot) => {
 
       if (text.length > MAX_TEXT_LENGTH) {
         return ctx.reply(
-          `❌ Teks terlalu panjang.\nMaksimal ${MAX_TEXT_LENGTH} karakter.`
+          `❌ Text is too long.\nMaximum ${MAX_TEXT_LENGTH} characters allowed.`
         );
       }
 
@@ -36,15 +36,15 @@ export default (bot) => {
         {
           caption:
             text.length > 500
-              ? "✅ QR Code berhasil dibuat."
-              : `✅ QR Code untuk:\n${text}`,
+              ? "✅ QR Code generated successfully."
+              : `✅ QR Code for:\n${text}`,
         }
       );
     } catch (error) {
       console.error("[QR]", error);
 
       await ctx.reply(
-        "❌ Terjadi kesalahan saat membuat QR Code."
+        "❌ An error occurred while generating the QR Code."
       );
     }
   });
