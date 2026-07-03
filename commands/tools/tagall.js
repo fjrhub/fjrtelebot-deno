@@ -1,15 +1,19 @@
-// Helper: Escape semua karakter khusus MarkdownV2 Telegram
+/**
+ * Escapes special characters for Telegram MarkdownV2 parse mode.
+ * @param {string} text - The text to escape.
+ * @returns {string} - The escaped text.
+ */
 const escapeMDV2 = (text) => {
   if (!text) return '';
   return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
 };
 
 export default (bot) => {
-  bot.command("tagall", async (ctx) => {
+  bot.command('tagall', async (ctx) => {
     const chatId = ctx.chat?.id;
     const chatType = ctx.chat?.type;
 
-    // 1️⃣ Validasi grup/supergroup
+    // 1. Validate chat type
     if (!chatId || !['group', 'supergroup'].includes(chatType)) {
       return ctx.reply(
         '❌ _This command only works in groups or supergroups\\._',
@@ -17,22 +21,32 @@ export default (bot) => {
       );
     }
 
-    // 2️⃣ Ambil pesan
+    // 2. Validate input message
     const rawText = ctx.match?.trim();
     if (!rawText) {
       return ctx.reply(
-        '⚠️ _Please provide a message after `/tagall`\\._\n\n_Example:_ `/tagall Meeting at 8 PM`',
+        '⚠️ _Please provide a message after_ `/tagall` _\\._\n\n_Example:_ `/tagall Meeting at 8 PM`',
         { parse_mode: 'MarkdownV2' }
       );
     }
 
+    // 3. Validate sender
+    if (!ctx.from) {
+      return ctx.reply('❌ _Could not identify the sender\\._', {
+        parse_mode: 'MarkdownV2',
+      });
+    }
+
     try {
-      // 📌 Ambil Admins
+      // 4. Fetch chat administrators
+      // Note: Telegram API does not provide a method to fetch all members.
+      // This currently only tags administrators. To tag all members,
+      // you need to maintain a local database of chat members.
       const admins = await ctx.api.getChatAdministrators(chatId);
 
-      // Filter user valid
+      // Filter out bots and the sender
       const targets = admins.filter(
-        (a) => !a.user.is_bot && a.user.id !== ctx.from?.id
+        (a) => !a.user.is_bot && a.user.id !== ctx.from.id
       );
 
       if (targets.length === 0) {
@@ -42,44 +56,42 @@ export default (bot) => {
         );
       }
 
-      // 3️⃣ Build mention list (AMAN)
-      const mentionList = [];
-
-      for (const u of targets) {
+      // 5. Build mention list
+      const mentionList = targets.map((u) => {
         if (u.user.username) {
-          // 🔥 WAJIB escape username
-          mentionList.push(`@${escapeMDV2(u.user.username)}`);
-        } else {
-          const name = escapeMDV2(u.user.first_name || 'Member');
-          mentionList.push(`[${name}](tg://user?id=${u.user.id})`);
+          return `@${escapeMDV2(u.user.username)}`;
         }
-      }
+        const name = escapeMDV2(u.user.first_name || 'Member');
+        return `[${name}](tg://user?id=${u.user.id})`;
+      });
 
-      // 4️⃣ Tag pengirim
-      const senderName = ctx.from?.first_name || 'User';
-      const senderTag = ctx.from?.username
+      // 6. Format sender tag
+      const senderName = ctx.from.first_name || 'User';
+      const senderTag = ctx.from.username
         ? `@${escapeMDV2(ctx.from.username)}`
         : `[${escapeMDV2(senderName)}](tg://user?id=${ctx.from.id})`;
 
-      // 5️⃣ Susun header
+      // 7. Construct message header
       const escapedMsg = escapeMDV2(rawText);
-      const headerPart =
-        `📢 *ANNOUNCEMENT*\n\n${escapedMsg}\n\n` +
-        `📤 *Sent by:* ${senderTag}\n🔔 *Tags:*`;
+      const header =
+        `📢 *${escapeMDV2('ANNOUNCEMENT')}*\n\n` +
+        `${escapedMsg}\n\n` +
+        `📤 *${escapeMDV2('Sent by')}:* ${senderTag}\n` +
+        `🔔 *${escapeMDV2('Tags')}:*`;
 
-      // 6️⃣ Split aman berdasarkan array
+      // 8. Split messages to respect Telegram's 4096 character limit
       const MAX_LEN = 4096;
       const messagesToSend = [];
-
-      let currentPart = headerPart;
+      let currentPart = header;
 
       for (const mention of mentionList) {
-        if ((currentPart + ' ' + mention).length > MAX_LEN) {
+        const nextPart = `${currentPart} ${mention}`;
+        
+        if (nextPart.length > MAX_LEN) {
           messagesToSend.push(currentPart.trim());
-
-          currentPart = `🔔 *Tags \\(cont\\.\\):* ${mention}`;
+          currentPart = `🔔 *${escapeMDV2('Tags (cont.)')}:* ${mention}`;
         } else {
-          currentPart += ' ' + mention;
+          currentPart = nextPart;
         }
       }
 
@@ -87,14 +99,12 @@ export default (bot) => {
         messagesToSend.push(currentPart.trim());
       }
 
-      // 7️⃣ Kirim (anti flood)
+      // 9. Send messages with a delay to prevent rate limits
       for (let i = 0; i < messagesToSend.length; i++) {
-        await ctx.reply(messagesToSend[i], {
-          parse_mode: 'MarkdownV2',
-        });
+        await ctx.reply(messagesToSend[i], { parse_mode: 'MarkdownV2' });
 
         if (i < messagesToSend.length - 1) {
-          await new Promise((r) => setTimeout(r, 800));
+          await new Promise((resolve) => setTimeout(resolve, 800));
         }
       }
     } catch (error) {
