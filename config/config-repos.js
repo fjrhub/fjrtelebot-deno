@@ -1,6 +1,5 @@
 export const repos = [
   { name: "NextPlayer", url: "https://github.com/anilbeesetti/nextplayer" },
-  { name: "ZeroClaw", url: "https://github.com/zeroclaw-labs/zeroclaw" },
   { name: "yt-dlp", url: "https://github.com/yt-dlp/yt-dlp" },
   { name: "aves", url: "https://github.com/deckerst/aves" },
   { name: "Aegis", url: "https://github.com/beemdevelopment/Aegis" },
