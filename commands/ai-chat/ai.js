@@ -1,4 +1,4 @@
-import { sendToAI } from "../../config/ai_services.js"; // Sesuaikan path ke file baru
+import { sendToAI } from "../../config/ai_services.js"; // Sesuaikan path
 import { kv } from "../../kv.js";
 
 /* ================= HISTORY KEY RESOLVER ================= */
@@ -15,33 +15,46 @@ async function getHistory(ctx) {
 
 async function saveHistory(ctx, messages) {
   const key = getHistoryKey(ctx);
-  await kv.set(key, messages.slice(-20));
+  await kv.set(key, messages.slice(-20)); // Simpan max 20 pesan (10 pasang)
 }
 
-/* ================= HISTORY TRIM ================= */
+/* ================= HISTORY TRIM (O(N) Optimization) ================= */
 function trimHistorySafe(history, maxChars = 4500) {
   let chars = 0;
-  const kept = [];
+  let startIndex = history.length;
+  
   for (let i = history.length - 1; i >= 0; i--) {
     chars += (history[i].content?.length || 0);
-    if (chars > maxChars) break;
-    kept.unshift(history[i]);
+    if (chars > maxChars) {
+      startIndex = i + 1;
+      break;
+    }
+    if (i === 0) startIndex = 0;
   }
-  return kept;
+  
+  return history.slice(startIndex);
 }
 
 /* ================= MESSAGE FORMATTER ================= */
 function splitMessage(text, limit = 4000) {
   const chunks = [];
-  while (text.length > limit) {
-    let idx = text.lastIndexOf("\n\n", limit);
-    if (idx === -1) idx = text.lastIndexOf("\n", limit);
-    if (idx === -1) idx = text.lastIndexOf(" ", limit);
-    if (idx === -1) idx = limit;
-    chunks.push(text.slice(0, idx).trim());
-    text = text.slice(idx).trim();
+  let remaining = text;
+  
+  while (remaining.length > limit) {
+    // Cari titik potong natural (paragraf, baris baru, atau spasi)
+    let idx = remaining.lastIndexOf("\n\n", limit);
+    
+    // Pastikan titik potong tidak terlalu dekat dengan awal (min 40% dari limit)
+    // untuk menghindari chunk yang sangat kecil (misal: 50 karakter)
+    if (idx < limit * 0.4) idx = remaining.lastIndexOf("\n", limit);
+    if (idx < limit * 0.4) idx = remaining.lastIndexOf(" ", limit);
+    if (idx < limit * 0.4) idx = limit; // Fallback: potong paksa
+
+    chunks.push(remaining.slice(0, idx).trim());
+    remaining = remaining.slice(idx).trim();
   }
-  if (text.length) chunks.push(text);
+  
+  if (remaining.length) chunks.push(remaining);
   return chunks;
 }
 
@@ -53,9 +66,12 @@ function convertToMarkdownV2(text) {
   const segments = [];
   const regex = /```[\s\S]*?```|`[^`]+`|\*\*(.+?)\*\*|__(.+?)__|(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)|\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g;
   let last = 0, match;
+  
   while ((match = regex.exec(text)) !== null) {
     if (match.index > last) segments.push(escapeMarkdownV2(text.slice(last, match.index)));
+    
     const [full, b1, b2, i1, i2, lt, url] = match;
+    
     if (full.startsWith("```"))
       segments.push("```" + full.slice(3, -3).replace(/`/g, "\\`") + "```");
     else if (full.startsWith("`"))
@@ -65,37 +81,47 @@ function convertToMarkdownV2(text) {
     else if (lt && url)
       segments.push(`[${escapeMarkdownV2(lt)}](${url.replace(/[)]/g, "\\)")})`);
     else segments.push(escapeMarkdownV2(full));
+      
     last = match.index + full.length;
   }
+  
   if (last < text.length) segments.push(escapeMarkdownV2(text.slice(last)));
   return segments.join("");
 }
 
 async function sendMarkdownMessage(ctx, text) {
-  for (const chunk of splitMessage(text, 4000)) {
-    let converted;
+  const chunks = splitMessage(text, 4000);
+  
+  for (const chunk of chunks) {
+    let converted = null;
     try {
       converted = convertToMarkdownV2(chunk);
-    } catch {
-      converted = null;
+    } catch (e) {
+      console.warn("Markdown conversion failed, falling back to plain text:", e.message);
     }
+
+    let sent = false;
     if (converted) {
       try {
-        await ctx.api.sendMessage(ctx.chat.id, converted, {
+        await ctx.reply(converted, {
           parse_mode: "MarkdownV2",
-          disable_web_page_preview: true,
+          link_preview_options: { is_disabled: true }, // Bot API 7.0+ Standard
         });
-        continue;
+        sent = true;
       } catch (e) {
-        console.error("MarkdownV2 error:", e.message);
+        console.error("MarkdownV2 send error:", e.description || e.message);
       }
     }
-    try {
-      await ctx.api.sendMessage(ctx.chat.id, chunk, {
-        disable_web_page_preview: true,
-      });
-    } catch (e) {
-      console.error("Plain send error:", e.message);
+    
+    // Fallback ke Plain Text jika MarkdownV2 gagal
+    if (!sent) {
+      try {
+        await ctx.reply(chunk, {
+          link_preview_options: { is_disabled: true },
+        });
+      } catch (e) {
+        console.error("Plain text send error:", e.description || e.message);
+      }
     }
   }
 }
@@ -109,6 +135,7 @@ function buildSystemPrompt(ctx) {
     : from?.first_name
       ? from.first_name + (from.last_name ? ` ${from.last_name}` : "")
       : "Unknown";
+      
   const chatInfo = chatType === "private" 
     ? `Chat: Private with ${user}` 
     : `Chat: Group "${ctx.chat.title || "Unknown"}" (ID: ${ctx.chat.id})`;
@@ -139,7 +166,7 @@ function buildSystemPrompt(ctx) {
 
 **Rules:**
 - Jawab lengkap tapi jangan bertele-tele
-- JANGAN tampilkan <think> atau proses berpikir
+- JANGAN tampilkan  atau proses berpikir
 - Langsung jawaban final
 - Kalau tidak tahu, katakan jujur
 - Kalau butuh info, tanya
@@ -153,10 +180,14 @@ function buildSystemPrompt(ctx) {
 
 /* ================= CORE AI HANDLER ================= */
 async function handleAICore(ctx, inputText) {
-  await ctx.replyWithChatAction("typing");
+  try {
+    await ctx.sendChatAction("typing"); // Unified ke syntax grammY
+  } catch (e) {
+    // Ignore jika gagal mengirim chat action
+  }
+
   const history = await getHistory(ctx);
   const systemPrompt = buildSystemPrompt(ctx);
-  
   const safeHistory = trimHistorySafe(history, 4500);
   
   const messages = [
@@ -168,7 +199,7 @@ async function handleAICore(ctx, inputText) {
     { role: "user", content: inputText },
   ];
 
-  const run = async () => {
+  const processAIResponse = async () => {
     let reply;
     try {
       reply = await sendToAI(messages);
@@ -185,32 +216,36 @@ async function handleAICore(ctx, inputText) {
             { role: "user", content: inputText },
           ]);
         } catch (retryErr) {
-          if (retryErr.isRateLimit) {
-            await ctx.reply("⏳ Rate limit. Coba lagi sebentar.").catch(() => {});
-          } else {
-            await ctx.reply("❌ Terjadi error saat menghubungi AI.").catch(() => {});
-          }
+          const msg = retryErr.isRateLimit 
+            ? "⏳ Rate limit. Coba lagi sebentar." 
+            : "❌ Terjadi error saat menghubungi AI.";
+          await ctx.reply(msg).catch(() => {});
           return;
         }
       } else {
         console.error("[AI] Unexpected error:", err);
-        await ctx.reply("❌ Terjadi error.").catch(() => {});
+        await ctx.reply("❌ Terjadi error tidak terduga.").catch(() => {});
         return;
       }
     }
     
+    if (!reply) return;
+
     await saveHistory(ctx, [
       ...history,
       { role: "user", content: inputText },
       { role: "ai", content: reply },
     ]);
+    
     await sendMarkdownMessage(ctx, reply);
   };
   
-  run().catch((err) => {
-    console.error("[AI] run() uncaught error:", err);
-    ctx.reply("❌ Terjadi error tidak terduga.").catch(() => {});
-  });
+  try {
+    await processAIResponse(); // Langsung await untuk menghindari unhandled promise rejection
+  } catch (err) {
+    console.error("[AI] Uncaught error in handler:", err);
+    await ctx.reply("❌ Terjadi error tidak terduga.").catch(() => {});
+  }
 }
 
 /* ================= HELP MESSAGE ================= */
@@ -234,19 +269,23 @@ function getHelpMessage() {
 /* ================= EXPORT BOT HANDLER ================= */
 export default (bot) => {
   bot.command("ai", async (ctx) => {
-    const text = ctx.message?.text?.trim();
+    const text = ctx.message?.text?.trim() || "";
     const input = text.replace(/^\/ai(@\w+)?\s*/i, "").trim();
 
-    if (!input || input === "help")
+    if (!input || input.toLowerCase() === "help") {
       return ctx.reply(getHelpMessage(), { parse_mode: "MarkdownV2" });
+    }
 
     await handleAICore(ctx, input);
   });
 
   bot.on("message:text", async (ctx) => {
-    const text = ctx.message?.text?.trim();
+    const text = ctx.message?.text?.trim() || "";
     if (!text || text.startsWith("/")) return;
-    if (ctx.message?.reply_to_message?.from?.id === ctx.me.id)
+    
+    // Cek apakah membalas pesan bot
+    if (ctx.message?.reply_to_message?.from?.id === ctx.me.id) {
       await handleAICore(ctx, text);
+    }
   });
 };
