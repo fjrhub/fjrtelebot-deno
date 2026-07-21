@@ -1,12 +1,13 @@
 import Groq from "npm:groq-sdk";
 import OpenAI from "npm:openai";
-import { kv } from "../../kv.js"; // Sesuaikan path jika perlu
+import { kv } from "../../kv.js";
 
 /* ================= AI CLIENTS ================= */
-const groq = globalThis._groq ?? new Groq({ apiKey: Deno.env.get("GROQ_API_KEY") });
-globalThis._groq = groq;
+// Deno meng-cache eksekusi modul, sehingga variabel ini sudah bersifat singleton.
+// Menghapus globalThis membuat kode lebih sederhana dan langsung.
+const groqClient = new Groq({ apiKey: Deno.env.get("GROQ_API_KEY") });
 
-const openrouter = globalThis._openrouter ?? new OpenAI({
+const openrouterClient = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
   apiKey: Deno.env.get("OPENROUTER_API_KEY"),
   defaultHeaders: {
@@ -14,81 +15,80 @@ const openrouter = globalThis._openrouter ?? new OpenAI({
     "X-Title": "FJRToolsBot",
   },
 });
-globalThis._openrouter = openrouter;
 
 /* ================= CONFIG FETCHER ================= */
+/**
+ * @returns {Promise<{ provider: string, model: string }>}
+ */
 export async function getAIConfig() {
   try {
-    // Mengambil provider dan model secara paralel untuk efisiensi
     const [providerRes, modelRes] = await Promise.all([
       kv.get(["ai_provider"], { cached: true }),
       kv.get(["ai_model"], { cached: true }),
     ]);
-    
+
     return {
-      provider: providerRes.value || "groq", // Default: "groq" atau "openrouter"
+      provider: providerRes.value || "groq",
       model: modelRes.value || "qwen/qwen3-32b",
     };
   } catch (err) {
-    console.error("[AIConfig] Error:", err.message);
+    console.error("[AIConfig] Error:", err instanceof Error ? err.message : String(err));
     return { provider: "groq", model: "qwen/qwen3-32b" };
   }
 }
 
 /* ================= AI REQUEST ================= */
+/**
+ * @param {Array} messages 
+ * @returns {Promise<string>}
+ */
 export async function sendToAI(messages) {
+  const config = await getAIConfig();
+  const { provider, model } = config;
+
   try {
-    const { provider, model } = await getAIConfig();
-    
-    let res;
-    if (provider === "openrouter") {
-      res = await openrouter.chat.completions.create({
-        model,
-        messages,
-        temperature: 1,
-        max_tokens: 2048,
-      });
-    } else {
-      // Fallback ke Groq
-      res = await groq.chat.completions.create({
-        model,
-        messages,
-        temperature: 1,
-        max_tokens: 2048,
-      });
-    }
+    const client = provider === "openrouter" ? openrouterClient : groqClient;
+
+    const res = await client.chat.completions.create({
+      model,
+      messages,
+      temperature: 1,
+      max_tokens: 2048,
+    });
 
     let content = res.choices?.[0]?.message?.content || "❌ No response.";
-    
-    // Cleanup: hapus tag <think> dan rapikan heading markdown
-    content = content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-    content = content.replace(/^#{1,6}\s+\*\*(.+?)\s*\*\*\s*$/gm, "**$1**");
-    content = content.replace(/^#{1,6}\s+(.+)$/gm, "**$1**");
-    content = content.replace(/\*\*(.+?)\s+\*\*/g, "**$1**");
-    
+
+    // Cleanup: hapus tag <think> dan normalisasi heading markdown secara berantai
+    content = content
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .replace(/^#{1,6}\s+\*\*(.+?)\s*\*\*\s*$/gm, "**$1**")
+      .replace(/^#{1,6}\s+(.+)$/gm, "**$1**")
+      .replace(/\*\*(.+?)\s+\*\*/g, "**$1**")
+      .trim();
+
     return content;
   } catch (err) {
-    console.error(`[${(await getAIConfig()).provider.toUpperCase()} ERROR]:`, err);
-    
-    // Handle Rate Limit (429)
-    if (err.status === 429 || err.error?.status === 429) {
+    const status = err?.status ?? err?.error?.status;
+    const message = err?.message ?? "";
+
+    console.error(`[${provider.toUpperCase()} ERROR]:`, err);
+
+    if (status === 429) {
       const e = new Error("rate_limit");
       e.isRateLimit = true;
       throw e;
     }
-    
-    // Handle Payload Too Large / Context Length (413 atau pesan spesifik)
-    if (err.status === 413 || err.error?.status === 413 || err.message?.includes("maximum context length")) {
+
+    if (status === 413 || message.includes("maximum context length")) {
       const e = new Error("too_large");
       e.isTooLarge = true;
       throw e;
     }
-    
-    // Handle Unauthorized (401)
-    if (err.status === 401 || err.error?.status === 401) {
+
+    if (status === 401) {
       return "❌ API key salah atau tidak valid.";
     }
-    
+
     return "❌ Gagal mengambil jawaban AI.";
   }
 }
