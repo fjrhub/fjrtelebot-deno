@@ -1,9 +1,5 @@
-import Groq from "npm:groq-sdk";
+import { sendToAI } from "../../config/ai_services.js"; // Sesuaikan path ke file baru
 import { kv } from "../../kv.js";
-
-/* ================= GROQ CLIENT ================= */
-const groq = globalThis._groq ?? new Groq({ apiKey: Deno.env.get("GROQ_API_KEY") });
-globalThis._groq = groq;
 
 /* ================= HISTORY KEY RESOLVER ================= */
 function getHistoryKey(ctx) {
@@ -55,8 +51,7 @@ function escapeMarkdownV2(text) {
 
 function convertToMarkdownV2(text) {
   const segments = [];
-  const regex =
-    /```[\s\S]*?```|`[^`]+`|\*\*(.+?)\*\*|__(.+?)__|(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)|\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g;
+  const regex = /```[\s\S]*?```|`[^`]+`|\*\*(.+?)\*\*|__(.+?)__|(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)|\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g;
   let last = 0, match;
   while ((match = regex.exec(text)) !== null) {
     if (match.index > last) segments.push(escapeMarkdownV2(text.slice(last, match.index)));
@@ -102,55 +97,6 @@ async function sendMarkdownMessage(ctx, text) {
     } catch (e) {
       console.error("Plain send error:", e.message);
     }
-  }
-}
-
-/* ================= MODEL FETCHER (OPTIMIZED FOR SERVERLESS) ================= */
-async function getCurrentModel() {
-  try {
-    // Opsi { cached: true } memanfaatkan edge cache Deno KV.
-    // Ini otomatis mengurangi frekuensi read ke database utama (konsistensi eventual ~1 jam),
-    // sehingga sangat hemat resource untuk serverless tanpa perlu simpan di RAM.
-    const res = await kv.get(["ai_model"], { cached: true });
-    return res.value || "qwen/qwen3-32b";
-  } catch (err) {
-    console.error("[ModelFetch] Error:", err.message);
-    return "qwen/qwen3-32b"; // Fallback aman
-  }
-}
-
-/* ================= GROQ REQUEST ================= */
-async function sendToGroq(messages) {
-  try {
-    // Fetch model setiap request, tapi dibackup oleh Deno KV Edge Cache
-    const model = await getCurrentModel();
-    
-    const res = await groq.chat.completions.create({
-      model,
-      messages,
-      temperature: 1,
-      max_tokens: 2048, 
-    });
-    let content = res.choices?.[0]?.message?.content || "❌ No response.";
-    content = content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-    content = content.replace(/^#{1,6}\s+\*\*(.+?)\s*\*\*\s*$/gm, "**$1**");
-    content = content.replace(/^#{1,6}\s+(.+)$/gm, "**$1**");
-    content = content.replace(/\*\*(.+?)\s+\*\*/g, "**$1**");
-    return content;
-  } catch (err) {
-    console.error("GROQ ERROR:", err);
-    if (err.status === 429) {
-      const e = new Error("rate_limit");
-      e.isRateLimit = true;
-      throw e;
-    }
-    if (err.status === 413) {
-      const e = new Error("too_large");
-      e.isTooLarge = true;
-      throw e;
-    }
-    if (err.status === 401) return "❌ API key salah.";
-    return "❌ Gagal mengambil jawaban AI.";
   }
 }
 
@@ -225,7 +171,7 @@ async function handleAICore(ctx, inputText) {
   const run = async () => {
     let reply;
     try {
-      reply = await sendToGroq(messages);
+      reply = await sendToAI(messages);
     } catch (err) {
       if (err.isRateLimit) {
         await ctx.reply("⏳ Rate limit. Coba lagi sebentar.").catch(() => {});
@@ -233,7 +179,8 @@ async function handleAICore(ctx, inputText) {
       }
       if (err.isTooLarge) {
         try {
-          reply = await sendToGroq([
+          // Retry tanpa history jika payload terlalu besar
+          reply = await sendToAI([
             { role: "system", content: systemPrompt },
             { role: "user", content: inputText },
           ]);
@@ -276,6 +223,7 @@ function getHelpMessage() {
 • /history \\- Export history ke file JSON
 
 *Features:*
+• Support multi\\-provider: Groq & OpenRouter
 • History terpisah: private \\(per user\\) & group \\(per chat\\)
 • History tersimpan di KV \\(max 10 pasang pesan\\)
 • Auto\\-trim history kalau terlalu panjang
