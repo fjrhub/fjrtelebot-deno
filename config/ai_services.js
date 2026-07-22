@@ -1,6 +1,6 @@
 import Groq from "npm:groq-sdk";
 import OpenAI from "npm:openai";
-import { kv } from "../../kv.js";
+import { kv } from "../kv.js";
 
 /* ================= AI CLIENTS ================= */
 // Deno meng-cache eksekusi modul, sehingga variabel ini sudah bersifat singleton.
