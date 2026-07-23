@@ -5,6 +5,7 @@ const MODELS = [
   "llama-3.1-8b-instant",
   "openai/gpt-oss-120b",
   "meta-llama/llama-4-scout-17b-16e-instruct",
+  "nvidia/nemotron-3-super-120b-a12b:free",
 ];
 
 const DEFAULT_MODEL = "qwen/qwen3-32b";
