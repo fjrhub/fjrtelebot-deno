@@ -1,11 +1,13 @@
 import { kv } from "../../kv.js";
 
 const MODELS = [
-  "qwen/qwen3-32b",
+  "qwen/qwen3.6-27b",
   "llama-3.1-8b-instant",
   "openai/gpt-oss-120b",
-  "meta-llama/llama-4-scout-17b-16e-instruct",
-  "nvidia/nemotron-3-super-120b-a12b:free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "poolside/laguna-m.1:free",
+  "cohere/north-mini-code:free",
+  "openai/gpt-oss-20b:free",
 ];
 
 const DEFAULT_MODEL = "qwen/qwen3-32b";
