@@ -3,6 +3,7 @@ import start from "./commands/tools/start.js";
 import qr from "./commands/tools/qr.js";
 import history from "./commands/ai-chat/history.js";
 import reset from "./commands/ai-chat/reset.js";
+import aiprovider from "./commands/ai-chat/provider.js";
 import ai from "./commands/ai-chat/ai.js";
 import github from "./commands/tools/github.js";
 import calc from "./commands/tools/calc.js";
@@ -23,6 +24,7 @@ import btc from "./commands/crypto/btc.js";
 export const registerHandlers = (bot) => {
   ping(bot);
   start(bot);
+  aiprovider(bot);
   qr(bot);
   history(bot);
   calc(bot);
