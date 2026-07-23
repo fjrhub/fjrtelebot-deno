@@ -10,7 +10,7 @@ const MODELS = [
   "openai/gpt-oss-20b:free",
 ];
 
-const DEFAULT_MODEL = "qwen/qwen3-32b";
+const DEFAULT_MODEL = "qwen/qwen3.6-27b";
 
 // Escape khusus untuk MarkdownV2 di dalam code block (hanya ` dan \ yang perlu di-escape)
 function escapeCode(text) {
