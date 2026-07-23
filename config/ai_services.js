@@ -29,11 +29,11 @@ export async function getAIConfig() {
 
     return {
       provider: providerRes.value || "groq",
-      model: modelRes.value || "qwen/qwen3-32b",
+      model: modelRes.value || "qwen/qwen3.6-27b",
     };
   } catch (err) {
     console.error("[AIConfig] Error:", err instanceof Error ? err.message : String(err));
-    return { provider: "groq", model: "qwen/qwen3-32b" };
+    return { provider: "groq", model: "qwen/qwen3.6-27b" };
   }
 }
 
