@@ -1,13 +1,9 @@
 import { kv } from "../../kv.js";
+import { PROVIDER_MODELS, DEFAULT_MODELS } from "./model.js";
 
-const PROVIDERS = [
-  "groq",
-  "openrouter",
-];
-
+const PROVIDERS = ["groq", "openrouter"];
 const DEFAULT_PROVIDER = "groq";
 
-// Escape khusus untuk MarkdownV2 di dalam code block (hanya ` dan \ yang perlu di-escape)
 function escapeCode(text) {
   if (typeof text !== "string") return text;
   return text.replace(/([`\\])/g, "\\$1");
@@ -50,8 +46,26 @@ export default (bot) => {
 
       await kv.set(["ai_provider"], selected);
       
+      const modelRes = await kv.get(["ai_model"], { cached: false });
+      const currentModel = modelRes?.value;
+      const validModels = PROVIDER_MODELS[selected];
+      
+      let modelChanged = false;
+      if (!currentModel || !validModels.includes(currentModel)) {
+        const newDefault = DEFAULT_MODELS[selected];
+        await kv.set(["ai_model"], newDefault);
+        modelChanged = true;
+      }
+      
       const escapedSelected = escapeCode(selected);
-      await ctx.reply(`✅ Provider berhasil diubah ke:\n\`${escapedSelected}\``, {
+      let replyText = `✅ Provider berhasil diubah ke:\n\`${escapedSelected}\``;
+      
+      if (modelChanged) {
+        const newModel = DEFAULT_MODELS[selected];
+        replyText += `\n\n🔄 Model otomatis disesuaikan ke:\n\`${escapeCode(newModel)}\``;
+      }
+      
+      await ctx.reply(replyText, {
         parse_mode: "MarkdownV2",
         disable_web_page_preview: true,
       });

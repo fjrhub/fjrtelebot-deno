@@ -1,18 +1,24 @@
 import { kv } from "../../kv.js";
 
-const MODELS = [
-  "qwen/qwen3.6-27b",
-  "llama-3.1-8b-instant",
-  "openai/gpt-oss-120b",
-  "nvidia/nemotron-3-ultra-550b-a55b:free",
-  "poolside/laguna-m.1:free",
-  "cohere/north-mini-code:free",
-  "openai/gpt-oss-20b:free",
-];
+export const PROVIDER_MODELS = {
+  groq: [
+    "qwen/qwen3.6-27b",
+    "llama-3.1-8b-instant",
+    "openai/gpt-oss-120b"
+  ],
+  openrouter: [
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "poolside/laguna-m.1:free",
+    "cohere/north-mini-code:free",
+    "openai/gpt-oss-20b:free"
+  ]
+};
 
-const DEFAULT_MODEL = "qwen/qwen3.6-27b";
+export const DEFAULT_MODELS = {
+  groq: "qwen/qwen3.6-27b",
+  openrouter: "nvidia/nemotron-3-ultra-550b-a55b:free"
+};
 
-// Escape khusus untuk MarkdownV2 di dalam code block (hanya ` dan \ yang perlu di-escape)
 function escapeCode(text) {
   if (typeof text !== "string") return text;
   return text.replace(/([`\\])/g, "\\$1");
@@ -24,21 +30,32 @@ export default (bot) => {
       const text = ctx.message?.text || "";
       const args = text.replace(/^\/model(@\w+)?\s*/i, "").trim();
 
+      const providerRes = await kv.get(["ai_provider"], { cached: false });
+      const currentProvider = providerRes?.value || "groq";
+      
+      const availableModels = PROVIDER_MODELS[currentProvider] || PROVIDER_MODELS.groq;
+      const defaultModel = DEFAULT_MODELS[currentProvider] || DEFAULT_MODELS.groq;
+
       if (!args) {
         const res = await kv.get(["ai_model"], { cached: false });
-        const current = res?.value || DEFAULT_MODEL;
+        let current = res?.value;
         
-        const list = MODELS.map((m, i) => {
+        if (!current || !availableModels.includes(current)) {
+          current = defaultModel;
+          await kv.set(["ai_model"], current);
+        }
+        
+        const list = availableModels.map((m, i) => {
           const escapedModel = escapeCode(m);
           const mark = m === current ? " ✅" : "";
           return `${i + 1}\\.` + ` \`${escapedModel}\`${mark}`;
         }).join("\n");
         
         const helpText = 
-          "*🤖 Daftar Model Tersedia*\n\n" +
+          `*🤖 Daftar Model Tersedia (${currentProvider})*\n\n` +
           list + "\n\n" +
           "*Gunakan:* `/model nama_model`\n" +
-          "*Contoh:* `/model qwen/qwen3-32b`";
+          "*Contoh:* `/model " + escapeCode(availableModels[0]) + "`";
         
         return ctx.reply(helpText, { 
           parse_mode: "MarkdownV2", 
@@ -46,9 +63,9 @@ export default (bot) => {
         });
       }
 
-      const selected = MODELS.find((m) => m.toLowerCase() === args.toLowerCase());
+      const selected = availableModels.find((m) => m.toLowerCase() === args.toLowerCase());
       if (!selected) {
-        return ctx.reply("❌ Model tidak ditemukan\\. Gunakan `/model` untuk lihat daftar\\.", {
+        return ctx.reply(`❌ Model tidak ditemukan atau tidak tersedia untuk provider \`${escapeCode(currentProvider)}\`. Gunakan \`/model\` untuk lihat daftar\\.`, {
           parse_mode: "MarkdownV2"
         });
       }
