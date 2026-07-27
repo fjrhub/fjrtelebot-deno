@@ -19,6 +19,13 @@ export const DEFAULT_MODELS = {
   openrouter: "nvidia/nemotron-3-ultra-550b-a55b:free"
 };
 
+// Escape SEMUA karakter khusus MarkdownV2 untuk teks biasa
+function escapeMarkdownV2(text) {
+  if (typeof text !== "string") return text;
+  return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+}
+
+// Escape khusus untuk di dalam code block (hanya ` dan \)
 function escapeCode(text) {
   if (typeof text !== "string") return text;
   return text.replace(/([`\\])/g, "\\$1");
@@ -51,8 +58,9 @@ export default (bot) => {
           return `${i + 1}\\.` + ` \`${escapedModel}\`${mark}`;
         }).join("\n");
         
+        const escapedProvider = escapeMarkdownV2(currentProvider);
         const helpText = 
-          `*🤖 Daftar Model Tersedia (${currentProvider})*\n\n` +
+          `*🤖 Daftar Model Tersedia \\(${escapedProvider}\\)*\n\n` +
           list + "\n\n" +
           "*Gunakan:* `/model nama_model`\n" +
           "*Contoh:* `/model " + escapeCode(availableModels[0]) + "`";

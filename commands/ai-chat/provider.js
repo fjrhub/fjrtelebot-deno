@@ -4,6 +4,13 @@ import { PROVIDER_MODELS, DEFAULT_MODELS } from "./model.js";
 const PROVIDERS = ["groq", "openrouter"];
 const DEFAULT_PROVIDER = "groq";
 
+// Escape SEMUA karakter khusus MarkdownV2 untuk teks biasa
+function escapeMarkdownV2(text) {
+  if (typeof text !== "string") return text;
+  return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+}
+
+// Escape khusus untuk di dalam code block (hanya ` dan \)
 function escapeCode(text) {
   if (typeof text !== "string") return text;
   return text.replace(/([`\\])/g, "\\$1");
