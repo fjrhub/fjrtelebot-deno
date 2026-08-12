@@ -1,4 +1,5 @@
 import ping from "./commands/tools/ping.js";
+import send from "./commands/tools/send.js";
 import start from "./commands/tools/start.js";
 import qr from "./commands/tools/qr.js";
 import history from "./commands/ai-chat/history.js";
@@ -23,6 +24,7 @@ import btc from "./commands/crypto/btc.js";
 
 export const registerHandlers = (bot) => {
   ping(bot);
+  send(bot);
   start(bot);
   aiprovider(bot);
   qr(bot);
