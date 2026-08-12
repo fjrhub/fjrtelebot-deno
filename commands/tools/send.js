@@ -1,19 +1,18 @@
 export default (bot) => {
-  // Command start untuk pengecekan status
   bot.command("start", (ctx) => {
     ctx.reply("Bot aktif 🚀\n\nGunakan: /send <url_video>");
   });
 
-  // Handler untuk command /send
   bot.command("send", async (ctx) => {
-    const url = ctx.match?.[1]?.trim();
+    // Ambil seluruh teks setelah "/send " secara manual
+    const rawText = ctx.message?.text || "";
+    const url = rawText.replace(/^\/send\s+/i, "").trim();
 
-    // Validasi jika URL tidak disertakan
     if (!url) {
       return ctx.reply("⚠️ Format salah!\nGunakan: /send <url_video>");
     }
 
-    // Validasi format URL sederhana
+    // Validasi URL
     try {
       new URL(url);
     } catch {
@@ -21,30 +20,32 @@ export default (bot) => {
     }
 
     try {
-      // Kirim status "uploading" agar user tahu sedang diproses
-      await ctx.sendChatAction("upload_video");
+      // ✅ Grammy menggunakan replyWithChatAction, bukan sendChatAction
+      await ctx.replyWithChatAction("upload_video");
 
-      // Kirim video langsung dari URL
-      // Telegram mendukung streaming langsung dari URL publik tanpa download manual
       await ctx.replyWithVideo(url, {
-        caption: `📹 Video dari: ${url}`,
+        caption: "📹 Video dikirim via /send",
         supports_streaming: true,
       });
-
     } catch (error) {
       console.error("Gagal mengirim video:", error);
-      
-      // Fallback: jika gagal sebagai video, coba kirim sebagai dokumen/link
-      if (error.description?.includes("wrong file identifier") || 
-          error.description?.includes("Failed to get HTTP URL content")) {
+
+      const desc = error.description || error.message || "";
+
+      if (
+        desc.includes("wrong file identifier") ||
+        desc.includes("Failed to get HTTP URL content") ||
+        desc.includes("Bad Request: invalid") ||
+        desc.includes("not found")
+      ) {
         return ctx.reply(
           `⚠️ Tidak bisa mengirim sebagai video.\n` +
-          `Kemungkinan URL bukan video langsung atau server menolak akses.\n\n` +
-          `Link: ${url}`
+            `URL mungkin bukan direct video link atau sudah expired.\n\n` +
+            `Link: ${url}`
         );
       }
-      
-      ctx.reply(`❌ Gagal mengirim video: ${error.description || error.message}`);
+
+      ctx.reply(`❌ Gagal: ${desc}`);
     }
   });
 };
