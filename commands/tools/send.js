@@ -1,43 +1,52 @@
 export default (bot) => {
+  bot.command("start", (ctx) => {
+    ctx.reply("Bot active 🚀\n\nUsage: /send <video_url>");
+  });
+
   bot.command("send", async (ctx) => {
     const rawText = ctx.message?.text || "";
     const url = rawText.replace(/^\/send\s+/i, "").trim();
 
     if (!url) {
-      return ctx.reply("⚠️ Format salah!\nGunakan: /send <url_video>");
+      return ctx.reply("⚠️ Invalid format!\nUsage: /send <video_url>");
     }
 
     try {
       new URL(url);
     } catch {
-      return ctx.reply("❌ URL tidak valid. Pastikan link lengkap (https://...)");
+      return ctx.reply("❌ Invalid URL. Make sure the link is complete (https://...)");
     }
 
     try {
       await ctx.replyWithChatAction("upload_video");
 
-      // ✅ Caption hanya tag sender
+      // ✅ Caption: "Sender: @username" with clickable inline mention
       const sender = ctx.from;
-      const caption = sender
-        ? `<a href="tg://user?id=${sender.id}">${sender.first_name}</a>`
-        : "Unknown";
+      let caption = "Sender: Unknown";
 
-      // ✅ Kirim video dulu
+      if (sender) {
+        const displayName = sender.username
+          ? `@${sender.username}`
+          : sender.first_name;
+
+        caption = `Sender: <a href="tg://user?id=${sender.id}">${displayName}</a>`;
+      }
+
+      // ✅ Send video first
       await ctx.replyWithVideo(url, {
         caption,
         parse_mode: "HTML",
         supports_streaming: true,
       });
 
-      // ✅ Hapus pesan command user setelah berhasil dikirim
+      // ✅ Delete user's command message after successful send
       try {
         await ctx.deleteMessage();
       } catch (deleteErr) {
-        // Bot mungkin tidak punya izin delete di grup, silent ignore
-        console.warn("Gagal menghapus pesan user:", deleteErr.description);
+        console.warn("Failed to delete user message:", deleteErr.description);
       }
     } catch (error) {
-      console.error("Gagal mengirim video:", error);
+      console.error("Failed to send video:", error);
 
       const desc = error.description || error.message || "";
 
@@ -48,11 +57,11 @@ export default (bot) => {
         desc.includes("not found")
       ) {
         return ctx.reply(
-          `⚠️ Tidak bisa mengirim sebagai video.\nURL mungkin bukan direct link atau sudah expired.`
+          "⚠️ Cannot send as video.\nThe URL may not be a direct link or has expired."
         );
       }
 
-      ctx.reply(`❌ Gagal: ${desc}`);
+      ctx.reply(`❌ Failed: ${desc}`);
     }
   });
 };
