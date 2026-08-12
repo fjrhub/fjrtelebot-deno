@@ -1,10 +1,5 @@
 export default (bot) => {
-  bot.command("start", (ctx) => {
-    ctx.reply("Bot aktif 🚀\n\nGunakan: /send <url_video>");
-  });
-
   bot.command("send", async (ctx) => {
-    // Ambil seluruh teks setelah "/send " secara manual
     const rawText = ctx.message?.text || "";
     const url = rawText.replace(/^\/send\s+/i, "").trim();
 
@@ -12,7 +7,6 @@ export default (bot) => {
       return ctx.reply("⚠️ Format salah!\nGunakan: /send <url_video>");
     }
 
-    // Validasi URL
     try {
       new URL(url);
     } catch {
@@ -20,13 +14,28 @@ export default (bot) => {
     }
 
     try {
-      // ✅ Grammy menggunakan replyWithChatAction, bukan sendChatAction
       await ctx.replyWithChatAction("upload_video");
 
+      // ✅ Caption hanya tag sender
+      const sender = ctx.from;
+      const caption = sender
+        ? `<a href="tg://user?id=${sender.id}">${sender.first_name}</a>`
+        : "Unknown";
+
+      // ✅ Kirim video dulu
       await ctx.replyWithVideo(url, {
-        caption: "📹 Video dikirim via /send",
+        caption,
+        parse_mode: "HTML",
         supports_streaming: true,
       });
+
+      // ✅ Hapus pesan command user setelah berhasil dikirim
+      try {
+        await ctx.deleteMessage();
+      } catch (deleteErr) {
+        // Bot mungkin tidak punya izin delete di grup, silent ignore
+        console.warn("Gagal menghapus pesan user:", deleteErr.description);
+      }
     } catch (error) {
       console.error("Gagal mengirim video:", error);
 
@@ -39,9 +48,7 @@ export default (bot) => {
         desc.includes("not found")
       ) {
         return ctx.reply(
-          `⚠️ Tidak bisa mengirim sebagai video.\n` +
-            `URL mungkin bukan direct video link atau sudah expired.\n\n` +
-            `Link: ${url}`
+          `⚠️ Tidak bisa mengirim sebagai video.\nURL mungkin bukan direct link atau sudah expired.`
         );
       }
 
