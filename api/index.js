@@ -1,9 +1,15 @@
 // index.js — SISI DENO (worker / eksekutor)
+import "jsr:@std/dotenv/load"; // ⬅️ WAJIB! Agar Deno bisa baca file .env saat test di laptop
 import { Bot } from "npm:grammy";
 
-// Lokal: tempel token di sini buat testing.
-// Deploy: ganti jadi "" lalu set BOT_TOKEN di dashboard Deno Deploy (biar gak bocor ke GitHub).
-const TOKEN = Deno.env.get("TOKEN") || "TEMPEL_TOKEN_DISINI";
+// Baca Token murni dari Environment Variable. Tidak ada fallback!
+    const TOKEN = Deno.env.get("TOKEN");
+
+// Kalau env belum di-set, langsung hentikan biar ketahuan errornya
+if (!TOKEN) {
+  throw new Error("❌ TOKEN belum di-set! Cek file .env (lokal) atau Environment Variables (Deno Deploy).");
+}
+
 const bot = new Bot(TOKEN);
 
 Deno.serve(async (req) => {
@@ -18,7 +24,7 @@ Deno.serve(async (req) => {
       chatId = b.chatId || chatId;
       link = b.url || link;
 
-      // Kalau yang dikirim payload Telegram asli, ekstrak chatId + url
+      // Kalau yang dikirim payload Telegram asli dari Vercel
       if (!chatId && b.message) {
         chatId = b.message.chat.id;
         const m = (b.message.text || "").match(/(https?:\/\/[^\s]+)/);
@@ -31,9 +37,14 @@ Deno.serve(async (req) => {
 
   // Ada chatId + url → eksekusi & balas ke Telegram
   if (chatId && link) {
-    // 🔥 Taruh logika berat kamu di sini nanti (download/scrape/dll)
-    await bot.api.sendMessage(chatId, `✅ Deno worker jalan!\n\nURL: ${link}`);
-    return json({ ok: true, chatId, url: link });
+    const numericChatId = Number(chatId); 
+    
+    try {
+      await bot.api.sendMessage(numericChatId, `✅ Deno worker jalan!\n\nURL: ${link}`);
+      return json({ ok: true, chatId: numericChatId, url: link });
+    } catch (err) {
+      return json({ ok: false, error: err.message, chatIdTercoba: numericChatId });
+    }
   }
 
   // Selain itu → status online
