@@ -3,7 +3,7 @@ import { Bot } from "npm:grammy";
 
 // Lokal: tempel token di sini buat testing.
 // Deploy: ganti jadi "" lalu set BOT_TOKEN di dashboard Deno Deploy (biar gak bocor ke GitHub).
-const TOKEN = Deno.env.get("BOT_TOKEN") || "TEMPEL_TOKEN_DISINI";
+const TOKEN = Deno.env.get("TOKEN") || "TEMPEL_TOKEN_DISINI";
 const bot = new Bot(TOKEN);
 
 Deno.serve(async (req) => {
