@@ -1,61 +1,48 @@
-export default async function handler(req, res) {
-  // Handle GET request (kalau dibuka di browser)
-  if (req.method === 'GET') {
-    return res.status(200).json({
-      status: 'online',
-      bot: '@CahayaMalamBot',
-      message: 'Webhook aktif. Kirim POST dari Telegram.'
-    });
-  }
+// index.js — SISI DENO (worker / eksekutor)
+import { Bot } from "npm:grammy";
 
-  // Hanya proses POST
-  if (req.method !== 'POST') {
-    return res.status(405).send('Method Not Allowed');
-  }
+// Lokal: tempel token di sini buat testing.
+// Deploy: ganti jadi "" lalu set BOT_TOKEN di dashboard Deno Deploy (biar gak bocor ke GitHub).
+const TOKEN = Deno.env.get("BOT_TOKEN") || "TEMPEL_TOKEN_DISINI";
+const bot = new Bot(TOKEN);
 
-  try {
-    // Payload asli dari Telegram
-    const update = req.body;
-    const message = update?.message;
-    const text = message?.text || '';
-    const chatId = message?.chat?.id;
+Deno.serve(async (req) => {
+  const u = new URL(req.url);
+  let chatId = u.searchParams.get("chatId");
+  let link = u.searchParams.get("url");
 
-    // Kalau bukan pesan teks biasa, abaikan
-    if (!chatId || !text) {
-      return res.status(200).send('OK');
-    }
+  // Kiriman POST dari Vercel (JSON)
+  if (req.method === "POST") {
+    try {
+      const b = await req.json();
+      chatId = b.chatId || chatId;
+      link = b.url || link;
 
-    // Regex untuk mendeteksi URL
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    const urls = text.match(urlRegex);
-
-    if (urls && urls.length > 0) {
-      console.log(`[Vercel] URL ditemukan: ${urls[0]} | ChatID: ${chatId}`);
-
-      const DENO_URL = process.env.DENO_ENDPOINT_URL;
-
-      if (DENO_URL) {
-        // ⚡ FIRE AND FORGET — tidak pakai await!
-        // Langsung lempar ke Deno, Vercel tidak menunggu
-        fetch(DENO_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Forwarded-From': 'vercel-cahaya-malam-bot'
-          },
-          body: JSON.stringify(update) // Kirim payload Telegram ASLI
-        }).catch(err => console.error('[Vercel] Gagal forward ke Deno:', err));
-      } else {
-        console.warn('[Vercel] DENO_ENDPOINT_URL belum diset!');
+      // Kalau yang dikirim payload Telegram asli, ekstrak chatId + url
+      if (!chatId && b.message) {
+        chatId = b.message.chat.id;
+        const m = (b.message.text || "").match(/(https?:\/\/[^\s]+)/);
+        link = m ? m[0] : null;
       }
-    } else {
-      console.log(`[Vercel] Bukan URL, abaikan. ChatID: ${chatId}`);
+    } catch {
+      // body bukan JSON → abaikan
     }
-
-  } catch (error) {
-    console.error('[Vercel] Error:', error);
   }
 
-  // ✅ SELALU balas 200 ke Telegram agar tidak retry
-  return res.status(200).send('OK');
+  // Ada chatId + url → eksekusi & balas ke Telegram
+  if (chatId && link) {
+    // 🔥 Taruh logika berat kamu di sini nanti (download/scrape/dll)
+    await bot.api.sendMessage(chatId, `✅ Deno worker jalan!\n\nURL: ${link}`);
+    return json({ ok: true, chatId, url: link });
+  }
+
+  // Selain itu → status online
+  return json({ status: "online", worker: "deno" });
+});
+
+// Helper response JSON
+function json(data) {
+  return new Response(JSON.stringify(data, null, 2), {
+    headers: { "Content-Type": "application/json" },
+  });
 }
