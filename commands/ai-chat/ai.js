@@ -23,21 +23,6 @@ async function saveHistory(ctx, messages) {
   await kv.set(key, messages.slice(-20));
 }
 
-/* ================= KV TRACKER HELPER ================= */
-async function trackBotMessage(ctx, messageId) {
-  const key = getAiMsgKey(ctx);
-  const res = await kv.get(key, { consistency: "eventual" });
-  const recentMsgs = Array.isArray(res.value) ? res.value : [];
-  
-  recentMsgs.push(messageId);
-  // Batasi penyimpanan 10 ID pesan terakhir
-  if (recentMsgs.length > 10) {
-    recentMsgs.splice(0, recentMsgs.length - 10);
-  }
-  
-  await kv.set(key, recentMsgs);
-}
-
 /* ================= HISTORY TRIM (O(N) Optimization) ================= */
 function trimHistorySafe(history, maxChars = 4500) {
   let chars = 0;
@@ -84,40 +69,30 @@ function convertToMarkdownV2(text) {
   let last = 0, match;
   
   while ((match = regex.exec(text)) !== null) {
-    if (match.index > last) {
-      segments.push(escapeMarkdownV2(text.slice(last, match.index)));
-    }
+    if (match.index > last) segments.push(escapeMarkdownV2(text.slice(last, match.index)));
     
     const [full, b1, b2, i1, i2, lt, url] = match;
     
-    if (full.startsWith("```")) {
+    if (full.startsWith("```"))
       segments.push("```" + full.slice(3, -3).replace(/`/g, "\\`") + "```");
-    } else if (full.startsWith("`")) {
+    else if (full.startsWith("`"))
       segments.push("`" + full.slice(1, -1).replace(/`/g, "\\`") + "`");
-    } else if (b1 || b2) {
-      segments.push("**" + escapeMarkdownV2(b1 || b2) + "**");
-    } else if (i1 || i2) {
-      segments.push("*" + escapeMarkdownV2(i1 || i2) + "*");
-    } else if (lt && url) {
-      const safeUrl = url.replace(/[()]/g, "\\$&");
-      segments.push(`[${escapeMarkdownV2(lt)}](${safeUrl})`);
-    } else {
-      segments.push(escapeMarkdownV2(full));
-    }
+    else if (b1 || b2) segments.push("*" + escapeMarkdownV2(b1 || b2) + "*");
+    else if (i1 || i2) segments.push("_" + escapeMarkdownV2(i1 || i2) + "_");
+    else if (lt && url)
+      segments.push(`[${escapeMarkdownV2(lt)}](${url.replace(/[)]/g, "\\)")})`);
+    else segments.push(escapeMarkdownV2(full));
       
     last = match.index + full.length;
   }
   
-  if (last < text.length) {
-    segments.push(escapeMarkdownV2(text.slice(last)));
-  }
-  
+  if (last < text.length) segments.push(escapeMarkdownV2(text.slice(last)));
   return segments.join("");
 }
 
 async function sendMarkdownMessage(ctx, text) {
   const chunks = splitMessage(text, 4000);
-  const sentMsgIds = [];
+  let lastMsgId = null;
   
   for (const chunk of chunks) {
     let converted = null;
@@ -134,7 +109,7 @@ async function sendMarkdownMessage(ctx, text) {
           parse_mode: "MarkdownV2",
           link_preview_options: { is_disabled: true },
         });
-        sentMsgIds.push(msg.message_id);
+        lastMsgId = msg.message_id;
         sent = true;
       } catch (e) {
         console.error("MarkdownV2 send error:", e.description || e.message);
@@ -146,14 +121,13 @@ async function sendMarkdownMessage(ctx, text) {
         const msg = await ctx.reply(chunk, {
           link_preview_options: { is_disabled: true },
         });
-        sentMsgIds.push(msg.message_id);
+        lastMsgId = msg.message_id;
       } catch (e) {
         console.error("Plain text send error:", e.description || e.message);
       }
     }
   }
-  
-  return sentMsgIds;
+  return lastMsgId;
 }
 
 /* ================= SYSTEM PROMPT ================= */
@@ -266,13 +240,17 @@ async function handleAICore(ctx, inputText) {
       { role: "ai", content: reply },
     ]);
     
-    const sentMsgIds = await sendMarkdownMessage(ctx, reply);
+    const lastMsgId = await sendMarkdownMessage(ctx, reply);
     
-    // Track semua ID chunk ke KV
-    if (sentMsgIds && sentMsgIds.length > 0) {
-      for (const msgId of sentMsgIds) {
-        await trackBotMessage(ctx, msgId);
-      }
+    if (lastMsgId) {
+      const key = getAiMsgKey(ctx);
+      const res = await kv.get(key, { consistency: "eventual" });
+      const recentMsgs = Array.isArray(res.value) ? res.value : [];
+      
+      recentMsgs.push(lastMsgId);
+      if (recentMsgs.length > 3) recentMsgs.shift(); 
+      
+      await kv.set(key, recentMsgs);
     }
   };
   
@@ -298,7 +276,7 @@ function getHelpMessage() {
 • History terpisah: private \\(per user\\) & group \\(per chat\\)
 • History tersimpan di KV \\(max 10 pasang pesan\\)
 • Auto\\-trim history kalau terlalu panjang
-• Support reply pesan bot *\\(hanya jika membalas output AI\\)*
+• Support reply pesan bot *(hanya jika membalas output AI)*
 • Auto split pesan panjang`;
 }
 
@@ -309,11 +287,7 @@ export default (bot) => {
     const input = text.replace(/^\/ai(@\w+)?\s*/i, "").trim();
 
     if (!input || input.toLowerCase() === "help") {
-      const msg = await ctx.reply(getHelpMessage(), { parse_mode: "MarkdownV2" });
-      
-      // PENTING: Track ID pesan bantuan agar bisa di-reply
-      await trackBotMessage(ctx, msg.message_id);
-      return;
+      return ctx.reply(getHelpMessage(), { parse_mode: "MarkdownV2" });
     }
 
     await handleAICore(ctx, input);
