@@ -1,10 +1,16 @@
 import { sendToAI } from "../../config/ai_services.js"; // Sesuaikan path
 import { kv } from "../../kv.js";
 
-/* ================= HISTORY KEY RESOLVER ================= */
+/* ================= HISTORY & STATE KEY RESOLVER ================= */
 function getHistoryKey(ctx) {
   if (ctx.chat.type === "private") return ["history", "user", ctx.from.id];
   return ["history", "group", ctx.chat.id];
+}
+
+// Key baru khusus untuk melacak Message ID dari respons AI terakhir
+function getAiMsgKey(ctx) {
+  if (ctx.chat.type === "private") return ["last_ai_msgs", "user", ctx.from.id];
+  return ["last_ai_msgs", "group", ctx.chat.id];
 }
 
 async function getHistory(ctx) {
@@ -41,11 +47,7 @@ function splitMessage(text, limit = 4000) {
   let remaining = text;
   
   while (remaining.length > limit) {
-    // Cari titik potong natural (paragraf, baris baru, atau spasi)
     let idx = remaining.lastIndexOf("\n\n", limit);
-    
-    // Pastikan titik potong tidak terlalu dekat dengan awal (min 40% dari limit)
-    // untuk menghindari chunk yang sangat kecil (misal: 50 karakter)
     if (idx < limit * 0.4) idx = remaining.lastIndexOf("\n", limit);
     if (idx < limit * 0.4) idx = remaining.lastIndexOf(" ", limit);
     if (idx < limit * 0.4) idx = limit; // Fallback: potong paksa
@@ -89,8 +91,10 @@ function convertToMarkdownV2(text) {
   return segments.join("");
 }
 
+// Diupdate untuk mengembalikan message_id dari pesan terakhir yang berhasil dikirim
 async function sendMarkdownMessage(ctx, text) {
   const chunks = splitMessage(text, 4000);
+  let lastMsgId = null;
   
   for (const chunk of chunks) {
     let converted = null;
@@ -103,27 +107,29 @@ async function sendMarkdownMessage(ctx, text) {
     let sent = false;
     if (converted) {
       try {
-        await ctx.reply(converted, {
+        const msg = await ctx.reply(converted, {
           parse_mode: "MarkdownV2",
-          link_preview_options: { is_disabled: true }, // Bot API 7.0+ Standard
+          link_preview_options: { is_disabled: true },
         });
+        lastMsgId = msg.message_id; // Simpan ID pesan
         sent = true;
       } catch (e) {
         console.error("MarkdownV2 send error:", e.description || e.message);
       }
     }
     
-    // Fallback ke Plain Text jika MarkdownV2 gagal
     if (!sent) {
       try {
-        await ctx.reply(chunk, {
+        const msg = await ctx.reply(chunk, {
           link_preview_options: { is_disabled: true },
         });
+        lastMsgId = msg.message_id; // Simpan ID pesan
       } catch (e) {
         console.error("Plain text send error:", e.description || e.message);
       }
     }
   }
+  return lastMsgId;
 }
 
 /* ================= SYSTEM PROMPT ================= */
@@ -166,7 +172,7 @@ function buildSystemPrompt(ctx) {
 
 **Rules:**
 - Jawab lengkap tapi jangan bertele-tele
-- JANGAN tampilkan  atau proses berpikir
+- JANGAN tampilkan <thought> atau proses berpikir
 - Langsung jawaban final
 - Kalau tidak tahu, katakan jujur
 - Kalau butuh info, tanya
@@ -181,7 +187,7 @@ function buildSystemPrompt(ctx) {
 /* ================= CORE AI HANDLER ================= */
 async function handleAICore(ctx, inputText) {
   try {
-    await ctx.replyWithChatAction("typing"); // PERBAIKAN: sintaks yang benar untuk grammY
+    await ctx.replyWithChatAction("typing");
   } catch (e) {
     // Ignore jika gagal mengirim chat action
   }
@@ -210,7 +216,6 @@ async function handleAICore(ctx, inputText) {
       }
       if (err.isTooLarge) {
         try {
-          // Retry tanpa history jika payload terlalu besar
           reply = await sendToAI([
             { role: "system", content: systemPrompt },
             { role: "user", content: inputText },
@@ -237,11 +242,25 @@ async function handleAICore(ctx, inputText) {
       { role: "ai", content: reply },
     ]);
     
-    await sendMarkdownMessage(ctx, reply);
+    // Kirim pesan dan dapatkan ID pesan terakhir yang dikirim
+    const lastMsgId = await sendMarkdownMessage(ctx, reply);
+    
+    // SIMPAN ID PESAN KE KV UNTUK VALIDASI REPLY NANTI
+    if (lastMsgId) {
+      const key = getAiMsgKey(ctx);
+      const res = await kv.get(key);
+      const recentMsgs = Array.isArray(res.value) ? res.value : [];
+      
+      // Tambahkan ID baru, batasi maksimal 3 ID terakhir (untuk handle split message / recent context)
+      recentMsgs.push(lastMsgId);
+      if (recentMsgs.length > 3) recentMsgs.shift(); 
+      
+      await kv.set(key, recentMsgs);
+    }
   };
   
   try {
-    await processAIResponse(); // Langsung await untuk menghindari unhandled promise rejection
+    await processAIResponse();
   } catch (err) {
     console.error("[AI] Uncaught error in handler:", err);
     await ctx.reply("❌ Terjadi error tidak terduga.").catch(() => {});
@@ -262,7 +281,7 @@ function getHelpMessage() {
 • History terpisah: private \\(per user\\) & group \\(per chat\\)
 • History tersimpan di KV \\(max 10 pasang pesan\\)
 • Auto\\-trim history kalau terlalu panjang
-• Support reply pesan bot
+• Support reply pesan bot *(hanya jika membalas output AI)*
 • Auto split pesan panjang`;
 }
 
@@ -281,11 +300,25 @@ export default (bot) => {
 
   bot.on("message:text", async (ctx) => {
     const text = ctx.message?.text?.trim() || "";
+    
+    // 1. Abaikan pesan kosong atau yang dimulai dengan '/' (seperti /ping, /start, dll)
     if (!text || text.startsWith("/")) return;
     
-    // Cek apakah membalas pesan bot
+    // 2. Cek apakah user membalas pesan bot
     if (ctx.message?.reply_to_message?.from?.id === ctx.me.id) {
-      await handleAICore(ctx, text);
+      
+      // 3. VALIDASI: Cek apakah pesan yang dibalas adalah pesan AI terakhir
+      const key = getAiMsgKey(ctx);
+      const res = await kv.get(key);
+      const recentMsgs = Array.isArray(res.value) ? res.value : [];
+      
+      // Jika ID pesan yang dibalas ADA di dalam daftar pesan AI terakhir, proses sebagai AI
+      if (recentMsgs.includes(ctx.message.reply_to_message.message_id)) {
+        await handleAICore(ctx, text);
+      }
+      
+      // 4. Jika TIDAK ada di daftar (misal: user me-reply pesan "Pong!" dari command /ping), 
+      //    maka kondisi di atas false, dan bot akan DIAM (mengabaikan).
     }
   });
 };
