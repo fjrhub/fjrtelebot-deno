@@ -102,7 +102,7 @@ function convertToMarkdownV2(text) {
 
 async function sendMarkdownMessage(ctx, text) {
   const chunks = splitMessage(text, 4000);
-  let lastMsgId = null;
+  const sentMsgIds = []; // Kumpulkan semua ID pesan yang terkirim
   
   for (const chunk of chunks) {
     let converted = null;
@@ -119,7 +119,7 @@ async function sendMarkdownMessage(ctx, text) {
           parse_mode: "MarkdownV2",
           link_preview_options: { is_disabled: true },
         });
-        lastMsgId = msg.message_id;
+        sentMsgIds.push(msg.message_id);
         sent = true;
       } catch (e) {
         console.error("MarkdownV2 send error:", e.description || e.message);
@@ -131,13 +131,14 @@ async function sendMarkdownMessage(ctx, text) {
         const msg = await ctx.reply(chunk, {
           link_preview_options: { is_disabled: true },
         });
-        lastMsgId = msg.message_id;
+        sentMsgIds.push(msg.message_id);
       } catch (e) {
         console.error("Plain text send error:", e.description || e.message);
       }
     }
   }
-  return lastMsgId;
+  
+  return sentMsgIds; // Return array of IDs
 }
 
 /* ================= SYSTEM PROMPT ================= */
@@ -250,15 +251,21 @@ async function handleAICore(ctx, inputText) {
       { role: "ai", content: reply },
     ]);
     
-    const lastMsgId = await sendMarkdownMessage(ctx, reply);
+    // Kirim pesan dan dapatkan SEMUA ID chunk yang terkirim
+    const sentMsgIds = await sendMarkdownMessage(ctx, reply);
     
-    if (lastMsgId) {
+    if (sentMsgIds && sentMsgIds.length > 0) {
       const key = getAiMsgKey(ctx);
       const res = await kv.get(key, { consistency: "eventual" });
       const recentMsgs = Array.isArray(res.value) ? res.value : [];
       
-      recentMsgs.push(lastMsgId);
-      if (recentMsgs.length > 3) recentMsgs.shift(); 
+      // Masukkan semua ID chunk ke array
+      recentMsgs.push(...sentMsgIds);
+      
+      // Batasi penyimpanan 10 pesan AI terakhir (bisa mencakup beberapa sesi)
+      if (recentMsgs.length > 10) {
+        recentMsgs.splice(0, recentMsgs.length - 10);
+      }
       
       await kv.set(key, recentMsgs);
     }
@@ -308,6 +315,7 @@ export default (bot) => {
     
     if (!text || text.startsWith("/")) return;
     
+    // Cek apakah pesan ini membalas pesan dari bot
     if (ctx.message?.reply_to_message?.from?.id === ctx.me.id) {
       const key = getAiMsgKey(ctx);
       
@@ -318,6 +326,7 @@ export default (bot) => {
       
       const recentMsgs = Array.isArray(res.value) ? res.value : [];
       
+      // Cek apakah pesan yang dibalas ada di dalam daftar ID yang disimpan di KV
       if (recentMsgs.includes(ctx.message.reply_to_message.message_id)) {
         await handleAICore(ctx, text);
         
