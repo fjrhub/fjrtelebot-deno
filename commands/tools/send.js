@@ -2,7 +2,6 @@ const IMAGE_EXT = [".jpg", ".jpeg", ".png", ".webp", ".bmp"];
 const VIDEO_EXT = [".mp4", ".webm", ".mov", ".m4v", ".mkv", ".avi"];
 const GIF_EXT = [".gif"];
 
-// Deteksi dari ekstensi file (query params otomatis diabaikan via pathname)
 function detectFromExtension(url) {
   try {
     const pathname = new URL(url).pathname.toLowerCase();
@@ -10,24 +9,20 @@ function detectFromExtension(url) {
     if (IMAGE_EXT.some((e) => pathname.endsWith(e))) return "photo";
     if (VIDEO_EXT.some((e) => pathname.endsWith(e))) return "video";
   } catch {
-    // Ignore URL parsing errors here, fallback will handle it
+    // Ignore URL parsing errors
   }
   return null;
 }
 
-// Fallback: cek Content-Type header jika ekstensi tidak dikenali
 async function detectFromHeaders(url) {
   try {
-    const res = await fetch(url, {
-      method: "HEAD",
-      headers: { "User-Agent": "Mozilla/5.0" },
-    });
+    const res = await fetch(url, { method: "HEAD", headers: { "User-Agent": "Mozilla/5.0" } });
     const type = (res.headers.get("content-type") || "").split(";")[0].trim();
     if (type === "image/gif") return "animation";
     if (type.startsWith("image/")) return "photo";
     if (type.startsWith("video/")) return "video";
   } catch {
-    // CDN menolak HEAD request → ignore, pakai default
+    // Ignore fetch errors
   }
   return null;
 }
@@ -35,96 +30,109 @@ async function detectFromHeaders(url) {
 export default (bot) => {
   bot.command("send", async (ctx) => {
     const rawText = ctx.message?.text || "";
-    const parts = rawText.replace(/^\/send\s+/i, "").trim().split(/\s+/);
+    const args = rawText.replace(/^\/send\s+/i, "").trim().split(/\s+/);
 
-    if (parts.length === 0 || !parts[parts.length - 1]) {
-      return ctx.reply("⚠️ Invalid format!\nUsage: /send [-video|-img|-gif] <media_url>");
+    if (args.length === 0 || !args[args.length - 1]) {
+      return ctx.reply("⚠️ Format salah!\nGunakan: `/send [-img|-video|-gif] <url>`", { parse_mode: "Markdown" });
     }
 
     let forcedType = null;
     let url = "";
 
-    if (parts[0].startsWith("-")) {
-      forcedType = parts[0].substring(1).toLowerCase();
-      url = parts.slice(1).join(" ");
+    if (args[0].startsWith("-")) {
+      const flag = args[0].toLowerCase();
+      if (flag === "-img") forcedType = "photo";
+      else if (flag === "-video") forcedType = "video";
+      else if (flag === "-gif") forcedType = "animation";
+      else return ctx.reply("⚠️ Flag tidak dikenali. Gunakan `-img`, `-video`, atau `-gif`.");
+      
+      url = args.slice(1).join(" ");
     } else {
-      url = parts.join(" ");
-    }
-
-    // Normalisasi tipe
-    if (forcedType === "img") forcedType = "photo";
-    if (forcedType === "gif") forcedType = "animation";
-
-    const validTypes = ["photo", "video", "animation"];
-    if (forcedType && !validTypes.includes(forcedType)) {
-      return ctx.reply("⚠️ Invalid type! Use -video, -img, or -gif");
+      url = args.join(" ");
     }
 
     if (!url) {
-      return ctx.reply("⚠️ Invalid format!\nUsage: /send [-video|-img|-gif] <media_url>");
+      return ctx.reply("⚠️ URL tidak ditemukan.");
     }
 
     try {
       new URL(url);
     } catch {
-      return ctx.reply("❌ Invalid URL. Make sure the link is complete (https://...)");
+      return ctx.reply("❌ URL tidak valid. Pastikan diawali dengan http:// atau https://");
     }
 
-    // Hapus pesan perintah terlebih dahulu
+    // 1. Hapus pesan perintah terlebih dahulu
     try {
       await ctx.deleteMessage();
-    } catch (deleteErr) {
-      console.warn("Failed to delete user message:", deleteErr.description);
+    } catch (err) {
+      // Catatan: Bot TIDAK BISA menghapus pesan di Private Chat (DM).
+      // Ini hanya akan berhasil di Group di mana bot adalah Admin.
+      console.log("Info: Gagal menghapus pesan (mungkin Private Chat atau bukan admin).");
     }
 
     try {
-      // Urutan deteksi: forced type → ekstensi → HEAD request → default video
-      const mediaType =
-        forcedType ?? detectFromExtension(url) ?? (await detectFromHeaders(url)) ?? "video";
+      const detectedType = detectFromExtension(url) ?? (await detectFromHeaders(url));
+      
+      // Susun prioritas tipe yang akan dicoba
+      const typesToTry = [];
+      if (forcedType) typesToTry.push(forcedType);
+      if (detectedType && !typesToTry.includes(detectedType)) typesToTry.push(detectedType);
+      
+      // Tambahkan fallback jika tipe utama gagal
+      ["video", "photo", "animation"].forEach(t => {
+        if (!typesToTry.includes(t)) typesToTry.push(t);
+      });
 
-      await ctx.replyWithChatAction(
-        mediaType === "photo" ? "upload_photo" : "upload_video"
-      );
+      // Hapus duplikat
+      const uniqueTypes = [...new Set(typesToTry)];
 
       const sender = ctx.from;
-      let caption = "Sender: Unknown";
-      if (sender) {
-        const displayName = sender.username ? `@${sender.username}` : sender.first_name;
-        caption = `Sender: <a href="tg://user?id=${sender.id}">${displayName}</a>`;
-      }
-
+      const displayName = sender?.username ? `@${sender.username}` : sender?.first_name || "Unknown";
+      const caption = `Sender: <a href="tg://user?id=${sender?.id}">${displayName}</a>`;
       const options = { caption, parse_mode: "HTML" };
 
-      const sendByType = (type) => {
-        if (type === "photo") return ctx.replyWithPhoto(url, options);
-        if (type === "animation") return ctx.replyWithAnimation(url, options);
-        return ctx.replyWithVideo(url, { ...options, supports_streaming: true });
+      const sendByType = async (type) => {
+        if (type === "photo") return await ctx.replyWithPhoto(url, options);
+        if (type === "animation") return await ctx.replyWithAnimation(url, options);
+        return await ctx.replyWithVideo(url, { ...options, supports_streaming: true });
       };
 
-      try {
-        await sendByType(mediaType);
-      } catch (firstErr) {
-        // Fallback cross-type: aman karena attempt pertama tidak mengirim apa pun
-        console.warn("Retrying with alternate media type:", firstErr.description);
-        await sendByType(mediaType === "photo" ? "video" : "photo");
+      let lastError = null;
+      let success = false;
+
+      // 2. Coba kirim berdasarkan prioritas, fallback jika error "wrong type"
+      for (const type of uniqueTypes) {
+        try {
+          await ctx.replyWithChatAction(type === "photo" ? "upload_photo" : "upload_video");
+          await sendByType(type);
+          success = true;
+          break; // Berhasil, hentikan loop
+        } catch (err) {
+          lastError = err;
+          const desc = err.description || "";
+          
+          // Jika errornya BUKAN karena tipe file salah, hentikan percobaan (misal URL mati total)
+          if (!desc.includes("wrong type of the web page content") && 
+              !desc.includes("Failed to get HTTP URL content")) {
+            break;
+          }
+          // Jika error tipe salah, loop akan lanjut ke tipe berikutnya (fallback)
+        }
       }
+
+      if (!success) {
+        throw lastError;
+      }
+
     } catch (error) {
       console.error("Failed to send media:", error);
-
       const desc = error.description || error.message || "";
 
-      if (
-        desc.includes("wrong file identifier") ||
-        desc.includes("Failed to get HTTP URL content") ||
-        desc.includes("Bad Request: invalid") ||
-        desc.includes("not found")
-      ) {
-        return ctx.reply(
-          "⚠️ Cannot send as media.\nThe URL may not be a direct link or has expired."
-        );
+      if (desc.includes("wrong file identifier") || desc.includes("Failed to get HTTP URL content") || desc.includes("wrong type of the web page content")) {
+        return ctx.reply("⚠️ Gagal mengirim media.\nPastikan URL adalah **direct link** (berakhiran .jpg, .mp4, dll), bukan link halaman web (seperti Twitter/Instagram/YouTube).");
       }
 
-      ctx.reply(`❌ Failed: ${desc}`);
+      ctx.reply(`❌ Gagal: ${desc}`);
     }
   });
 };
