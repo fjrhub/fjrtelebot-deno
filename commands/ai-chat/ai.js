@@ -69,24 +69,34 @@ function convertToMarkdownV2(text) {
   let last = 0, match;
   
   while ((match = regex.exec(text)) !== null) {
-    if (match.index > last) segments.push(escapeMarkdownV2(text.slice(last, match.index)));
+    if (match.index > last) {
+      segments.push(escapeMarkdownV2(text.slice(last, match.index)));
+    }
     
     const [full, b1, b2, i1, i2, lt, url] = match;
     
-    if (full.startsWith("```"))
+    if (full.startsWith("```")) {
       segments.push("```" + full.slice(3, -3).replace(/`/g, "\\`") + "```");
-    else if (full.startsWith("`"))
+    } else if (full.startsWith("`")) {
       segments.push("`" + full.slice(1, -1).replace(/`/g, "\\`") + "`");
-    else if (b1 || b2) segments.push("*" + escapeMarkdownV2(b1 || b2) + "*");
-    else if (i1 || i2) segments.push("_" + escapeMarkdownV2(i1 || i2) + "_");
-    else if (lt && url)
-      segments.push(`[${escapeMarkdownV2(lt)}](${url.replace(/[)]/g, "\\)")})`);
-    else segments.push(escapeMarkdownV2(full));
+    } else if (b1 || b2) {
+      segments.push("**" + escapeMarkdownV2(b1 || b2) + "**");
+    } else if (i1 || i2) {
+      segments.push("*" + escapeMarkdownV2(i1 || i2) + "*");
+    } else if (lt && url) {
+      const safeUrl = url.replace(/[()]/g, "\\$&");
+      segments.push(`[${escapeMarkdownV2(lt)}](${safeUrl})`);
+    } else {
+      segments.push(escapeMarkdownV2(full));
+    }
       
     last = match.index + full.length;
   }
   
-  if (last < text.length) segments.push(escapeMarkdownV2(text.slice(last)));
+  if (last < text.length) {
+    segments.push(escapeMarkdownV2(text.slice(last)));
+  }
+  
   return segments.join("");
 }
 
@@ -276,7 +286,7 @@ function getHelpMessage() {
 • History terpisah: private \\(per user\\) & group \\(per chat\\)
 • History tersimpan di KV \\(max 10 pasang pesan\\)
 • Auto\\-trim history kalau terlalu panjang
-• Support reply pesan bot *(hanya jika membalas output AI)*
+• Support reply pesan bot *\\(hanya jika membalas output AI\\)*
 • Auto split pesan panjang`;
 }
 
