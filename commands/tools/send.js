@@ -4,10 +4,14 @@ const GIF_EXT = [".gif"];
 
 // Deteksi dari ekstensi file (query params otomatis diabaikan via pathname)
 function detectFromExtension(url) {
-  const pathname = new URL(url).pathname.toLowerCase();
-  if (GIF_EXT.some((e) => pathname.endsWith(e))) return "animation";
-  if (IMAGE_EXT.some((e) => pathname.endsWith(e))) return "photo";
-  if (VIDEO_EXT.some((e) => pathname.endsWith(e))) return "video";
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    if (GIF_EXT.some((e) => pathname.endsWith(e))) return "animation";
+    if (IMAGE_EXT.some((e) => pathname.endsWith(e))) return "photo";
+    if (VIDEO_EXT.some((e) => pathname.endsWith(e))) return "video";
+  } catch {
+    // Ignore URL parsing errors here, fallback will handle it
+  }
   return null;
 }
 
@@ -29,16 +33,35 @@ async function detectFromHeaders(url) {
 }
 
 export default (bot) => {
-  bot.command("start", (ctx) => {
-    ctx.reply("Bot active 🚀\n\nUsage: /send <media_url>\nSupports: video, image, GIF");
-  });
-
   bot.command("send", async (ctx) => {
     const rawText = ctx.message?.text || "";
-    const url = rawText.replace(/^\/send\s+/i, "").trim();
+    const parts = rawText.replace(/^\/send\s+/i, "").trim().split(/\s+/);
+
+    if (parts.length === 0 || !parts[parts.length - 1]) {
+      return ctx.reply("⚠️ Invalid format!\nUsage: /send [-video|-img|-gif] <media_url>");
+    }
+
+    let forcedType = null;
+    let url = "";
+
+    if (parts[0].startsWith("-")) {
+      forcedType = parts[0].substring(1).toLowerCase();
+      url = parts.slice(1).join(" ");
+    } else {
+      url = parts.join(" ");
+    }
+
+    // Normalisasi tipe
+    if (forcedType === "img") forcedType = "photo";
+    if (forcedType === "gif") forcedType = "animation";
+
+    const validTypes = ["photo", "video", "animation"];
+    if (forcedType && !validTypes.includes(forcedType)) {
+      return ctx.reply("⚠️ Invalid type! Use -video, -img, or -gif");
+    }
 
     if (!url) {
-      return ctx.reply("⚠️ Invalid format!\nUsage: /send <media_url>");
+      return ctx.reply("⚠️ Invalid format!\nUsage: /send [-video|-img|-gif] <media_url>");
     }
 
     try {
@@ -47,10 +70,17 @@ export default (bot) => {
       return ctx.reply("❌ Invalid URL. Make sure the link is complete (https://...)");
     }
 
+    // Hapus pesan perintah terlebih dahulu
     try {
-      // Urutan deteksi: ekstensi → HEAD request → default video
+      await ctx.deleteMessage();
+    } catch (deleteErr) {
+      console.warn("Failed to delete user message:", deleteErr.description);
+    }
+
+    try {
+      // Urutan deteksi: forced type → ekstensi → HEAD request → default video
       const mediaType =
-        detectFromExtension(url) ?? (await detectFromHeaders(url)) ?? "video";
+        forcedType ?? detectFromExtension(url) ?? (await detectFromHeaders(url)) ?? "video";
 
       await ctx.replyWithChatAction(
         mediaType === "photo" ? "upload_photo" : "upload_video"
@@ -77,12 +107,6 @@ export default (bot) => {
         // Fallback cross-type: aman karena attempt pertama tidak mengirim apa pun
         console.warn("Retrying with alternate media type:", firstErr.description);
         await sendByType(mediaType === "photo" ? "video" : "photo");
-      }
-
-      try {
-        await ctx.deleteMessage();
-      } catch (deleteErr) {
-        console.warn("Failed to delete user message:", deleteErr.description);
       }
     } catch (error) {
       console.error("Failed to send media:", error);
