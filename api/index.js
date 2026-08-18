@@ -1,23 +1,50 @@
-import { Bot } from "npm:grammy";
+// api/index.js — WORKER endpoint (dipanggil dari index.js root)
+import { bot } from "../bot.js";
 
-const token = Deno.env.get("TOKEN");
-const bot = new Bot(token || "");
+export async function handleApiRequest(req) {
+  const u = new URL(req.url);
+  let chatId = u.searchParams.get("chatId");
+  let link = u.searchParams.get("url");
 
-Deno.serve(async (req) => {
-  const url = new URL(req.url);
-  const chatId = url.searchParams.get("chatId");
-  const link = url.searchParams.get("url");
-
-  // Kalau ada chatId dan url, langsung kirim ke Telegram
-  if (chatId && link) {
+  // Support POST JSON (kiriman dari Vercel)
+  if (req.method === "POST") {
     try {
-      await bot.api.sendMessage(chatId, `✅ SUKSES! Deno Worker jalan.\n\nURL: ${link}`);
-      return new Response("✅ Pesan terkirim ke Telegram. Cek HP Mas-nya!", { status: 200 });
-    } catch (err) {
-      return new Response("❌ Gagal kirim Telegram: " + err.message, { status: 500 });
+      const b = await req.json();
+      chatId = b.chatId || chatId;
+      link = b.url || link;
+
+      // Kalau Vercel kirim payload Telegram mentah
+      if (!chatId && b.message) {
+        chatId = b.message.chat.id;
+        const m = (b.message.text || "").match(/(https?:\/\/[^\s]+)/);
+        link = m ? m[0] : null;
+      }
+    } catch {
+      // body bukan JSON → abaikan
     }
   }
 
-  // Kalau dibuka biasa di browser tanpa parameter
-  return new Response("Server Deno Online. Pakai ?chatId=ID&url=LINK", { status: 200 });
-});
+  // 🔥 Eksekusi: kirim pesan ke Telegram
+  if (chatId && link) {
+    try {
+      await bot.api.sendMessage(
+        chatId,
+        `✅ <b>Deno Worker Sukses!</b>\n\nURL diproses:\n<code>${link}</code>`,
+        { parse_mode: "HTML" }
+      );
+      return json({ ok: true, chatId, url: link });
+    } catch (err) {
+      return json({ ok: false, error: err.message }, 500);
+    }
+  }
+
+  return json({ ok: false, error: "chatId / url tidak ditemukan" }, 400);
+}
+
+// Helper response JSON
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
