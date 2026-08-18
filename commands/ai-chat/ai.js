@@ -7,7 +7,7 @@ function getHistoryKey(ctx) {
   return ["history", "group", ctx.chat.id];
 }
 
-// Key baru khusus untuk melacak Message ID dari respons AI terakhir
+// Key khusus untuk melacak Message ID dari respons AI terakhir
 function getAiMsgKey(ctx) {
   if (ctx.chat.type === "private") return ["last_ai_msgs", "user", ctx.from.id];
   return ["last_ai_msgs", "group", ctx.chat.id];
@@ -15,7 +15,8 @@ function getAiMsgKey(ctx) {
 
 async function getHistory(ctx) {
   const key = getHistoryKey(ctx);
-  const res = await kv.get(key);
+  // Gunakan eventual consistency untuk read yang lebih cepat
+  const res = await kv.get(key, { consistency: "eventual" });
   return res.value || [];
 }
 
@@ -111,7 +112,7 @@ async function sendMarkdownMessage(ctx, text) {
           parse_mode: "MarkdownV2",
           link_preview_options: { is_disabled: true },
         });
-        lastMsgId = msg.message_id; // Simpan ID pesan
+        lastMsgId = msg.message_id;
         sent = true;
       } catch (e) {
         console.error("MarkdownV2 send error:", e.description || e.message);
@@ -123,7 +124,7 @@ async function sendMarkdownMessage(ctx, text) {
         const msg = await ctx.reply(chunk, {
           link_preview_options: { is_disabled: true },
         });
-        lastMsgId = msg.message_id; // Simpan ID pesan
+        lastMsgId = msg.message_id;
       } catch (e) {
         console.error("Plain text send error:", e.description || e.message);
       }
@@ -248,10 +249,10 @@ async function handleAICore(ctx, inputText) {
     // SIMPAN ID PESAN KE KV UNTUK VALIDASI REPLY NANTI
     if (lastMsgId) {
       const key = getAiMsgKey(ctx);
-      const res = await kv.get(key);
+      const res = await kv.get(key, { consistency: "eventual" });
       const recentMsgs = Array.isArray(res.value) ? res.value : [];
       
-      // Tambahkan ID baru, batasi maksimal 3 ID terakhir (untuk handle split message / recent context)
+      // Tambahkan ID baru, batasi maksimal 3 ID terakhir (untuk handle split message)
       recentMsgs.push(lastMsgId);
       if (recentMsgs.length > 3) recentMsgs.shift(); 
       
@@ -306,19 +307,33 @@ export default (bot) => {
     
     // 2. Cek apakah user membalas pesan bot
     if (ctx.message?.reply_to_message?.from?.id === ctx.me.id) {
-      
-      // 3. VALIDASI: Cek apakah pesan yang dibalas adalah pesan AI terakhir
       const key = getAiMsgKey(ctx);
-      const res = await kv.get(key);
+      
+      // 3. UKUR WAKTU READ KV (Performance Benchmark)
+      const t0 = performance.now();
+      const res = await kv.get(key, { consistency: "eventual" });
+      const t1 = performance.now();
+      const kvReadTime = (t1 - t0).toFixed(2); // Hasil dalam milidetik (misal: "1.45")
+      
       const recentMsgs = Array.isArray(res.value) ? res.value : [];
       
-      // Jika ID pesan yang dibalas ADA di dalam daftar pesan AI terakhir, proses sebagai AI
+      // 4. VALIDASI: Cek apakah pesan yang dibalas adalah pesan AI terakhir
       if (recentMsgs.includes(ctx.message.reply_to_message.message_id)) {
+        
+        // Proses sebagai AI
         await handleAICore(ctx, text);
+        
+        // 5. KIRIM PESAN TERPISAH berisi info speed read KV
+        // Plain text digunakan agar tidak bentrok dengan MarkdownV2 AI
+        await ctx.reply(`⚡ KV Read Speed: ${kvReadTime} ms`, {
+          reply_to_message_id: ctx.message.message_id,
+        }).catch(() => {});
+        
+      } else {
+        // Jika TIDAK ada di daftar (misal: me-reply "Pong!" dari /ping), bot akan DIAM.
+        // Opsional: Bisa tambahkan console.log untuk debugging
+        // console.log(`[Ignored] Reply to non-AI message. MsgID: ${ctx.message.reply_to_message.message_id}`);
       }
-      
-      // 4. Jika TIDAK ada di daftar (misal: user me-reply pesan "Pong!" dari command /ping), 
-      //    maka kondisi di atas false, dan bot akan DIAM (mengabaikan).
     }
   });
 };
