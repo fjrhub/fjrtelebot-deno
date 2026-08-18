@@ -1,4 +1,4 @@
-import { InputFile } from "grammy"; // <-- PENTING: Tambahkan import ini
+import { InputFile } from "npm:grammy";
 
 const IMAGE_EXT = [".jpg", ".jpeg", ".png", ".webp", ".bmp"];
 const VIDEO_EXT = [".mp4", ".webm", ".mov", ".m4v", ".mkv", ".avi"];
