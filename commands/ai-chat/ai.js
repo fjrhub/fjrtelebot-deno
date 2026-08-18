@@ -100,10 +100,15 @@ function convertToMarkdownV2(text) {
   return segments.join("");
 }
 
-async function sendMarkdownMessage(ctx, text) {
+async function sendMarkdownMessage(ctx, text, replyToMessageId = null) {
   const chunks = splitMessage(text, 4000);
-  const sentMsgIds = []; // Kumpulkan semua ID pesan yang terkirim
+  const sentMsgIds = [];
   
+  // Opsi reply agar pesan bot membalas pesan user
+  const replyOptions = replyToMessageId 
+    ? { reply_to_message_id: replyToMessageId, allow_sending_without_reply: true } 
+    : {};
+
   for (const chunk of chunks) {
     let converted = null;
     try {
@@ -118,6 +123,7 @@ async function sendMarkdownMessage(ctx, text) {
         const msg = await ctx.reply(converted, {
           parse_mode: "MarkdownV2",
           link_preview_options: { is_disabled: true },
+          ...replyOptions
         });
         sentMsgIds.push(msg.message_id);
         sent = true;
@@ -130,6 +136,7 @@ async function sendMarkdownMessage(ctx, text) {
       try {
         const msg = await ctx.reply(chunk, {
           link_preview_options: { is_disabled: true },
+          ...replyOptions
         });
         sentMsgIds.push(msg.message_id);
       } catch (e) {
@@ -137,8 +144,7 @@ async function sendMarkdownMessage(ctx, text) {
       }
     }
   }
-  
-  return sentMsgIds; // Return array of IDs
+  return sentMsgIds;
 }
 
 /* ================= SYSTEM PROMPT ================= */
@@ -194,7 +200,7 @@ function buildSystemPrompt(ctx) {
 }
 
 /* ================= CORE AI HANDLER ================= */
-async function handleAICore(ctx, inputText) {
+async function handleAICore(ctx, inputText, replyToMessageId = null) {
   try {
     await ctx.replyWithChatAction("typing");
   } catch (e) {
@@ -220,7 +226,7 @@ async function handleAICore(ctx, inputText) {
       reply = await sendToAI(messages);
     } catch (err) {
       if (err.isRateLimit) {
-        await ctx.reply("⏳ Rate limit. Coba lagi sebentar.").catch(() => {});
+        await ctx.reply("⏳ Rate limit. Coba lagi sebentar.", { reply_to_message_id: replyToMessageId, allow_sending_without_reply: true }).catch(() => {});
         return;
       }
       if (err.isTooLarge) {
@@ -233,12 +239,12 @@ async function handleAICore(ctx, inputText) {
           const msg = retryErr.isRateLimit 
             ? "⏳ Rate limit. Coba lagi sebentar." 
             : "❌ Terjadi error saat menghubungi AI.";
-          await ctx.reply(msg).catch(() => {});
+          await ctx.reply(msg, { reply_to_message_id: replyToMessageId, allow_sending_without_reply: true }).catch(() => {});
           return;
         }
       } else {
         console.error("[AI] Unexpected error:", err);
-        await ctx.reply("❌ Terjadi error tidak terduga.").catch(() => {});
+        await ctx.reply("❌ Terjadi error tidak terduga.", { reply_to_message_id: replyToMessageId, allow_sending_without_reply: true }).catch(() => {});
         return;
       }
     }
@@ -251,20 +257,20 @@ async function handleAICore(ctx, inputText) {
       { role: "ai", content: reply },
     ]);
     
-    // Kirim pesan dan dapatkan SEMUA ID chunk yang terkirim
-    const sentMsgIds = await sendMarkdownMessage(ctx, reply);
+    const sentMsgIds = await sendMarkdownMessage(ctx, reply, replyToMessageId);
     
+    // Simpan semua ID pesan chunk ke Deno KV agar user bisa reply di chunk manapun
     if (sentMsgIds && sentMsgIds.length > 0) {
       const key = getAiMsgKey(ctx);
       const res = await kv.get(key, { consistency: "eventual" });
       const recentMsgs = Array.isArray(res.value) ? res.value : [];
       
-      // Masukkan semua ID chunk ke array
       recentMsgs.push(...sentMsgIds);
       
-      // Batasi penyimpanan 10 pesan AI terakhir (bisa mencakup beberapa sesi)
-      if (recentMsgs.length > 10) {
-        recentMsgs.splice(0, recentMsgs.length - 10);
+      // Simpan hingga 20 ID pesan terakhir
+      const maxStoredMsgs = 20;
+      while (recentMsgs.length > maxStoredMsgs) {
+        recentMsgs.shift(); 
       }
       
       await kv.set(key, recentMsgs);
@@ -275,7 +281,7 @@ async function handleAICore(ctx, inputText) {
     await processAIResponse();
   } catch (err) {
     console.error("[AI] Uncaught error in handler:", err);
-    await ctx.reply("❌ Terjadi error tidak terduga.").catch(() => {});
+    await ctx.reply("❌ Terjadi error tidak terduga.", { reply_to_message_id: replyToMessageId, allow_sending_without_reply: true }).catch(() => {});
   }
 }
 
@@ -304,10 +310,15 @@ export default (bot) => {
     const input = text.replace(/^\/ai(@\w+)?\s*/i, "").trim();
 
     if (!input || input.toLowerCase() === "help") {
-      return ctx.reply(getHelpMessage(), { parse_mode: "MarkdownV2" });
+      return ctx.reply(getHelpMessage(), { 
+        parse_mode: "MarkdownV2",
+        reply_to_message_id: ctx.message.message_id,
+        allow_sending_without_reply: true
+      });
     }
 
-    await handleAICore(ctx, input);
+    // Teruskan ID pesan user agar bot membalas (reply) pesan tersebut
+    await handleAICore(ctx, input, ctx.message.message_id);
   });
 
   bot.on("message:text", async (ctx) => {
@@ -315,8 +326,8 @@ export default (bot) => {
     
     if (!text || text.startsWith("/")) return;
     
-    // Cek apakah pesan ini membalas pesan dari bot
-    if (ctx.message?.reply_to_message?.from?.id === ctx.me.id) {
+    // Cek apakah user membalas pesan dari bot ini
+    if (ctx.message?.reply_to_message?.from?.id === ctx.me?.id) {
       const key = getAiMsgKey(ctx);
       
       const t0 = performance.now();
@@ -326,12 +337,14 @@ export default (bot) => {
       
       const recentMsgs = Array.isArray(res.value) ? res.value : [];
       
-      // Cek apakah pesan yang dibalas ada di dalam daftar ID yang disimpan di KV
+      // Validasi apakah pesan yang di-reply ada di daftar history KV
       if (recentMsgs.includes(ctx.message.reply_to_message.message_id)) {
-        await handleAICore(ctx, text);
+        // Balas pesan user dengan AI
+        await handleAICore(ctx, text, ctx.message.message_id);
         
         await ctx.reply(`⚡ KV Read Speed: ${kvReadTime} ms`, {
           reply_to_message_id: ctx.message.message_id,
+          allow_sending_without_reply: true
         }).catch(() => {});
       }
     }
