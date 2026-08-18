@@ -1,3 +1,5 @@
+import { InputFile } from "grammy"; // <-- PENTING: Tambahkan import ini
+
 const IMAGE_EXT = [".jpg", ".jpeg", ".png", ".webp", ".bmp"];
 const VIDEO_EXT = [".mp4", ".webm", ".mov", ".m4v", ".mkv", ".avi"];
 const GIF_EXT = [".gif"];
@@ -10,19 +12,6 @@ function detectFromExtension(url) {
     if (VIDEO_EXT.some((e) => pathname.endsWith(e))) return "video";
   } catch {
     // Ignore URL parsing errors
-  }
-  return null;
-}
-
-async function detectFromHeaders(url) {
-  try {
-    const res = await fetch(url, { method: "HEAD", headers: { "User-Agent": "Mozilla/5.0" } });
-    const type = (res.headers.get("content-type") || "").split(";")[0].trim();
-    if (type === "image/gif") return "animation";
-    if (type.startsWith("image/")) return "photo";
-    if (type.startsWith("video/")) return "video";
-  } catch {
-    // Ignore fetch errors
   }
   return null;
 }
@@ -65,71 +54,70 @@ export default (bot) => {
     try {
       await ctx.deleteMessage();
     } catch (err) {
-      // Catatan: Bot TIDAK BISA menghapus pesan di Private Chat (DM).
-      // Ini hanya akan berhasil di Group di mana bot adalah Admin.
       console.log("Info: Gagal menghapus pesan (mungkin Private Chat atau bukan admin).");
     }
 
     try {
-      const detectedType = detectFromExtension(url) ?? (await detectFromHeaders(url));
-      
-      // Susun prioritas tipe yang akan dicoba
-      const typesToTry = [];
-      if (forcedType) typesToTry.push(forcedType);
-      if (detectedType && !typesToTry.includes(detectedType)) typesToTry.push(detectedType);
-      
-      // Tambahkan fallback jika tipe utama gagal
-      ["video", "photo", "animation"].forEach(t => {
-        if (!typesToTry.includes(t)) typesToTry.push(t);
+      // 2. Bot mengunduh file terlebih dahulu (Proxy)
+      await ctx.replyWithChatAction("upload_video"); // Aksi umum sambil download
+
+      const response = await fetch(url, {
+        headers: {
+          // User-Agent sering dibutuhkan oleh downloader API agar tidak diblokir
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+        },
       });
 
-      // Hapus duplikat
-      const uniqueTypes = [...new Set(typesToTry)];
+      if (!response.ok) {
+        throw new Error(`Gagal mengunduh: HTTP ${response.status} ${response.statusText}`);
+      }
+
+      // Cek Content-Type dari response API
+      const contentType = response.headers.get("content-type") || "";
+      
+      // Tentukan tipe media: Prioritas ke forcedType, lalu cek contentType, lalu ekstensi URL
+      let mediaType = forcedType;
+      if (!mediaType) {
+        if (contentType.includes("image/gif")) mediaType = "animation";
+        else if (contentType.includes("image/")) mediaType = "photo";
+        else if (contentType.includes("video/")) mediaType = "video";
+        else mediaType = detectFromExtension(url) || "video"; // Fallback terakhir
+      }
+
+      // Tentukan ekstensi file untuk nama file (Telegram lebih suka file dengan ekstensi)
+      let ext = ".bin";
+      if (mediaType === "photo") ext = ".jpg";
+      else if (mediaType === "animation") ext = ".gif";
+      else if (mediaType === "video") ext = ".mp4";
+
+      // 3. Ubah response stream menjadi InputFile Grammy
+      // Menggunakan response.body (ReadableStream) agar hemat memori (tidak dimuat penuh ke RAM)
+      const inputFile = new InputFile(response.body, `media_${Date.now()}${ext}`);
 
       const sender = ctx.from;
       const displayName = sender?.username ? `@${sender.username}` : sender?.first_name || "Unknown";
       const caption = `Sender: <a href="tg://user?id=${sender?.id}">${displayName}</a>`;
       const options = { caption, parse_mode: "HTML" };
 
-      const sendByType = async (type) => {
-        if (type === "photo") return await ctx.replyWithPhoto(url, options);
-        if (type === "animation") return await ctx.replyWithAnimation(url, options);
-        return await ctx.replyWithVideo(url, { ...options, supports_streaming: true });
-      };
-
-      let lastError = null;
-      let success = false;
-
-      // 2. Coba kirim berdasarkan prioritas, fallback jika error "wrong type"
-      for (const type of uniqueTypes) {
-        try {
-          await ctx.replyWithChatAction(type === "photo" ? "upload_photo" : "upload_video");
-          await sendByType(type);
-          success = true;
-          break; // Berhasil, hentikan loop
-        } catch (err) {
-          lastError = err;
-          const desc = err.description || "";
-          
-          // Jika errornya BUKAN karena tipe file salah, hentikan percobaan (misal URL mati total)
-          if (!desc.includes("wrong type of the web page content") && 
-              !desc.includes("Failed to get HTTP URL content")) {
-            break;
-          }
-          // Jika error tipe salah, loop akan lanjut ke tipe berikutnya (fallback)
-        }
-      }
-
-      if (!success) {
-        throw lastError;
+      // 4. Kirim file berdasarkan tipe
+      if (mediaType === "photo") {
+        await ctx.replyWithPhoto(inputFile, options);
+      } else if (mediaType === "animation") {
+        await ctx.replyWithAnimation(inputFile, options);
+      } else {
+        await ctx.replyWithVideo(inputFile, { ...options, supports_streaming: true });
       }
 
     } catch (error) {
-      console.error("Failed to send media:", error);
+      console.error("Failed to process/send media:", error);
       const desc = error.description || error.message || "";
 
-      if (desc.includes("wrong file identifier") || desc.includes("Failed to get HTTP URL content") || desc.includes("wrong type of the web page content")) {
-        return ctx.reply("⚠️ Gagal mengirim media.\nPastikan URL adalah **direct link** (berakhiran .jpg, .mp4, dll), bukan link halaman web (seperti Twitter/Instagram/YouTube).");
+      if (desc.includes("Gagal mengunduh")) {
+        return ctx.reply("⚠️ Gagal mengunduh dari URL.\nAPI Downloader mungkin sedang down atau link sudah kedaluwarsa.");
+      }
+      
+      if (desc.includes("request entity too large") || desc.includes("file is too big")) {
+        return ctx.reply("⚠️ File terlalu besar! Maksimal ukuran upload langsung adalah 50MB.");
       }
 
       ctx.reply(`❌ Gagal: ${desc}`);
