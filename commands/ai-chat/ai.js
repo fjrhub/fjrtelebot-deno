@@ -276,7 +276,7 @@ function getHelpMessage() {
 • History terpisah: private \\(per user\\) & group \\(per chat\\)
 • History tersimpan di KV \\(max 10 pasang pesan\\)
 • Auto\\-trim history kalau terlalu panjang
-• Support reply pesan bot *(hanya jika membalas output AI)*
+• Support reply pesan bot *\\(hanya jika membalas output AI\\)*
 • Auto split pesan panjang`;
 }
 
