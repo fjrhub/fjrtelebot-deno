@@ -300,20 +300,11 @@ export default (bot) => {
     
     if (ctx.message?.reply_to_message?.from?.id === ctx.me.id) {
       const key = getAiMsgKey(ctx);
-      
-      const t0 = performance.now();
       const res = await kv.get(key, { consistency: "eventual" });
-      const t1 = performance.now();
-      const kvReadTime = (t1 - t0).toFixed(2);
-      
       const recentMsgs = Array.isArray(res.value) ? res.value : [];
       
       if (recentMsgs.includes(ctx.message.reply_to_message.message_id)) {
         await handleAICore(ctx, text);
-        
-        await ctx.reply(`⚡ KV Read Speed: ${kvReadTime} ms`, {
-          reply_to_message_id: ctx.message.message_id,
-        }).catch(() => {});
       }
     }
   });
