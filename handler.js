@@ -7,6 +7,7 @@ import reset from "./commands/ai-chat/reset.js";
 import aiprovider from "./commands/ai-chat/provider.js";
 import ai from "./commands/ai-chat/ai.js";
 import github from "./commands/tools/github.js";
+import releases from "./commands/tools/releases.js";
 import calc from "./commands/tools/calc.js";
 import setver from "./commands/tools/setver.js";
 import encrypt from "./commands/tools/enc.js";
@@ -28,6 +29,7 @@ export const registerHandlers = (bot) => {
   start(bot);
   aiprovider(bot);
   qr(bot);
+  releases(bot);
   history(bot);
   calc(bot);
   reset(bot);
