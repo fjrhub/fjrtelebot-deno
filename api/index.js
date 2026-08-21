@@ -2,7 +2,6 @@ import { bot } from "../bot.js";
 import { InputFile } from "npm:grammy";
 
 export async function handleApiRequest(req) {
-  // 1. Validasi Secret Key
   const secretHeader = req.headers.get("x-vercel-secret");
   const secretEnv = Deno.env.get("API_SECRET");
   
@@ -10,7 +9,6 @@ export async function handleApiRequest(req) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  // 2. Parse Payload
   let payload;
   try { 
     payload = await req.json(); 
@@ -23,25 +21,23 @@ export async function handleApiRequest(req) {
     return new Response("Missing data", { status: 400 });
   }
 
-  // 3. Fire-and-forget: Balik respon ke Vercel segera, proses berat jalan di background
-  // Catatan: Jika menggunakan Deno Deploy, pastikan environment mendukung background tasks 
-  // atau gunakan pola yang menjaga event loop tetap hidup.
+  // Fire-and-forget
   prosesDiBackground(chatId, userId, url, excludedSlides || [], platform, mention)
     .catch(err => console.error("[Background Fatal Error]", err));
 
   return new Response("OK", { status: 200 });
 }
 
-// 🔥 FUNGSI PEKERJAAN BERAT 🔥
 async function prosesDiBackground(chatId, userId, url, excludedSlides, platform, mention) {
   try {
-    console.log(`[Worker] Mulai memproses: ${platform} | URL: ${url}`);
-    
-    // Kirim chat action (abaikan error jika chat sudah ditutup/user block bot)
-    await bot.api.sendChatAction(chatId, "upload_video").catch(() => {});
+    console.log(`[Worker] Mulai: ${platform} | URL: ${url}`);
+    await bot.api.sendChatAction(chatId, "upload_photo").catch(() => {});
 
+    // ⚠️ PENTING: Tambahkan Referer agar tidak diblokir TikTok CDN (403 Forbidden)
     const headers = { 
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" 
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Referer": "https://www.tiktok.com/",
+      "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
     };
     
     let apiUrl = "";
@@ -54,7 +50,6 @@ async function prosesDiBackground(chatId, userId, url, excludedSlides, platform,
       return;
     }
 
-    // 1. Fetch ke API Downloader
     const apiRes = await fetch(apiUrl, { headers });
     if (!apiRes.ok) throw new Error(`API Downloader HTTP ${apiRes.status}`);
     
@@ -64,12 +59,9 @@ async function prosesDiBackground(chatId, userId, url, excludedSlides, platform,
     }
 
     const result = apiData.result;
-    const senderName = mention || ctx?.from?.first_name || "User";
+    const senderName = mention || "User";
     const caption = `📥 Sender: <a href="tg://user?id=${userId}">${senderName}</a>`;
 
-    // ============================================
-    // 📸 INSTAGRAM HANDLER
-    // ============================================
     if (platform === "Instagram") {
       let mediaUrls = result.url;
       if (typeof mediaUrls === "string") mediaUrls = [mediaUrls];
@@ -86,21 +78,13 @@ async function prosesDiBackground(chatId, userId, url, excludedSlides, platform,
       } else {
         await kirimMediaGroup(mediaUrls, excludedSlides, caption, headers, chatId);
       }
-    }
-
-    // ============================================
-    // 🎵 TIKTOK HANDLER
-    // ============================================
+    } 
     else if (platform === "TikTok") {
-      const type = result.type; // "video" atau "image"
+      const type = result.type;
 
       if (type === "video") {
-        const videoUrl = 
-          result.alternatives?.selected || 
-          result.alternatives?.hd || 
-          (typeof result.data === "string" ? result.data : null);
-
-        if (!videoUrl) throw new Error("URL video TikTok tidak ditemukan di response API.");
+        const videoUrl = result.alternatives?.selected || result.alternatives?.hd || (typeof result.data === "string" ? result.data : null);
+        if (!videoUrl) throw new Error("URL video TikTok tidak ditemukan.");
         await kirimMediaTunggal(videoUrl, true, caption, headers, chatId);
       } 
       else if (type === "image") {
@@ -125,54 +109,34 @@ async function prosesDiBackground(chatId, userId, url, excludedSlides, platform,
 
   } catch (err) {
     console.error(`[Worker Error] ChatId: ${chatId} | Error:`, err.message);
-    await bot.api.sendMessage(chatId, `❌ Gagal memproses:\n<code>${err.message}</code>\n\n<i>Coba lagi atau gunakan link lain.</i>`, { 
-      parse_mode: "HTML" 
-    }).catch(() => {});
+    await bot.api.sendMessage(chatId, `❌ Gagal memproses:\n<code>${err.message}</code>`, { parse_mode: "HTML" }).catch(() => {});
   }
 }
-
-// ==========================================
-// 🛠️ HELPER FUNCTIONS
-// ==========================================
 
 async function kirimMediaTunggal(mediaUrl, isVideo, caption, headers, chatId) {
   const res = await fetch(mediaUrl, { headers });
   if (!res.ok) throw new Error(`Gagal download media: HTTP ${res.status}`);
-  if (!res.body) throw new Error("Response body kosong saat download media.");
+  if (!res.body) throw new Error("Response body kosong.");
 
-  const ext = isVideo ? ".mp4" : ".jpg";
+  const ext = isVideo ? ".mp4" : ".jpeg"; // TikTok image mode biasanya .jpeg
   const inputFile = new InputFile(res.body, `media_${Date.now()}${ext}`);
 
   if (isVideo) {
-    await bot.api.sendVideo(chatId, inputFile, {
-      caption,
-      parse_mode: "HTML",
-      supports_streaming: true,
-    });
+    await bot.api.sendVideo(chatId, inputFile, { caption, parse_mode: "HTML", supports_streaming: true });
   } else {
-    await bot.api.sendPhoto(chatId, inputFile, {
-      caption,
-      parse_mode: "HTML",
-    });
+    await bot.api.sendPhoto(chatId, inputFile, { caption, parse_mode: "HTML" });
   }
 }
 
 async function kirimMediaGroup(mediaUrls, excludedSlides, caption, headers, chatId) {
-  // Normalisasi excludedSlides menjadi array angka
-  const excludeSet = new Set(
-    Array.isArray(excludedSlides) 
-      ? excludedSlides.filter(n => typeof n === 'number' && n > 0) 
-      : []
-  );
-
+  const excludeSet = new Set(Array.isArray(excludedSlides) ? excludedSlides.filter(n => typeof n === 'number' && n > 0) : []);
   const filteredUrls = mediaUrls.filter((_, index) => !excludeSet.has(index + 1));
 
   if (filteredUrls.length === 0) {
-    await bot.api.sendMessage(chatId, "⚠️ Semua slide yang dipilih dikecualikan. Tidak ada media untuk dikirim.", { parse_mode: "HTML" });
+    await bot.api.sendMessage(chatId, "⚠️ Semua slide dikecualikan.", { parse_mode: "HTML" });
     return;
   }
 
-  // Chunking per 10 item (batas maksimal Telegram Media Group)
   const chunkArray = (arr, size) => {
     const res = [];
     for (let i = 0; i < arr.length; i += size) res.push(arr.slice(i, i + size));
@@ -182,42 +146,73 @@ async function kirimMediaGroup(mediaUrls, excludedSlides, caption, headers, chat
   const groups = chunkArray(filteredUrls, 10);
 
   for (let i = 0; i < groups.length; i++) {
-    // 🚀 OPTIMASI: Fetch semua media dalam chunk secara PARALEL
-    const fetchPromises = groups[i].map(async (mediaUrl, j) => {
+    const mediaGroup = [];
+
+    for (let j = 0; j < groups[i].length; j++) {
+      const mediaUrl = groups[i][j];
+      console.log(`[Download] Mengambil: ${mediaUrl.substring(0, 60)}...`);
+
       try {
         const res = await fetch(mediaUrl, { headers });
+        console.log(`[Download] Status HTTP: ${res.status} ${res.statusText}`);
+
         if (!res.ok) {
-          console.warn(`[Download] Gagal mengambil ${mediaUrl} (HTTP ${res.status}), skipping...`);
-          return null;
+          console.error(`[Download] Gagal HTTP ${res.status}. Body:`, await res.text().catch(() => "No body"));
+          continue; // Skip gambar yang error, lanjut ke berikutnya
         }
 
         const contentType = res.headers.get("content-type") || "";
+        console.log(`[Download] Content-Type: ${contentType}`);
+
+        // TikTok photomode hampir selalu image, tapi kita deteksi saja
         const typeItem = contentType.includes("video") ? "video" : "photo";
-        const ext = typeItem === "video" ? ".mp4" : ".jpg";
+        const ext = typeItem === "video" ? ".mp4" : ".jpeg";
 
-        return {
+        if (!res.body) {
+          console.error("[Download] Response body null!");
+          continue;
+        }
+
+        mediaGroup.push({
           type: typeItem,
-          media: new InputFile(res.body, `media_${Date.now()}_${i}_${j}${ext}`),
+          media: new InputFile(res.body, `tiktok_${Date.now()}_${j}${ext}`),
           ...(i === 0 && j === 0 ? { caption, parse_mode: "HTML" } : {}),
-        };
+        });
       } catch (err) {
-        console.warn(`[Download] Error saat fetch ${mediaUrl}:`, err.message);
-        return null;
+        console.error(`[Download] Exception:`, err.message);
       }
-    });
-
-    // Tunggu semua download dalam chunk selesai, lalu filter yang null (gagal)
-    const mediaGroup = (await Promise.all(fetchPromises)).filter(item => item !== null);
+    }
 
     if (mediaGroup.length > 0) {
-      await bot.api.sendMediaGroup(chatId, mediaGroup);
+      console.log(`[Telegram] Mengirim media group (${mediaGroup.length} item)...`);
+      try {
+        // Coba kirim sebagai grup (album)
+        await bot.api.sendMediaGroup(chatId, mediaGroup);
+        console.log(`[Telegram] ✅ Berhasil kirim batch ${i + 1} sebagai grup.`);
+      } catch (err) {
+        console.error(`[Telegram] ❌ Gagal kirim sebagai grup:`, err.message);
+        console.log(`[Telegram] 🔄 Fallback: Mencoba kirim satu per satu...`);
+        
+        // FALLBACK: Jika grup gagal, kirim satu per satu
+        for (const item of mediaGroup) {
+          try {
+            if (item.type === "photo") {
+              await bot.api.sendPhoto(chatId, item.media, { caption: item.caption, parse_mode: "HTML" });
+            } else {
+              await bot.api.sendVideo(chatId, item.media, { caption: item.caption, parse_mode: "HTML" });
+            }
+          } catch (e) {
+            console.error("[Telegram] Fallback per-item juga gagal:", e.message);
+          }
+        }
+      }
     } else {
-      console.warn(`[Worker] Chunk ${i + 1} kosong setelah filter, tidak dikirim.`);
+      console.warn(`[Worker] Batch ${i + 1} kosong setelah filter.`);
+      if (i === 0) {
+        await bot.api.sendMessage(chatId, "❌ Gagal mengunduh media. Link mungkin expired atau dibatasi.", { parse_mode: "HTML" });
+      }
     }
 
-    // Delay antar batch untuk menghindari rate-limit Telegram (429 Too Many Requests)
-    if (i < groups.length - 1) {
-      await new Promise((r) => setTimeout(r, 800));
-    }
+    if (i < groups.length - 1) await new Promise((r) => setTimeout(r, 800));
   }
 }
