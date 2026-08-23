@@ -19,7 +19,7 @@ const coins = [
 export default (bot) => {
   bot.command("btc", async (ctx) => {
     try {
-      // 1. Ambil SEMUA data harga dari Binance
+      // 1. Fetch ALL price data from Binance
       const binanceRes = await fetch("https://api.binance.com/api/v3/ticker/24hr");
       
       if (!binanceRes.ok) throw new Error(`Binance HTTP error! status: ${binanceRes.status}`);
@@ -30,8 +30,8 @@ export default (bot) => {
         return acc;
       }, {});
 
-      // 2. Ambil kurs USDT ke IDR (Karena Binance murni USDT)
-      let usdtToIdr = 16000; // Nilai fallback default
+      // 2. Fetch USDT to IDR exchange rate (since Binance is purely USDT)
+      let usdtToIdr = 16000; // Default fallback value
       try {
         const cgRes = await fetch(
           "https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=idr"
@@ -41,10 +41,10 @@ export default (bot) => {
           usdtToIdr = cgData.tether.idr;
         }
       } catch (e) {
-        console.warn("Gagal fetch kurs USDT/IDR, menggunakan nilai fallback.");
+        console.warn("Failed to fetch USDT/IDR exchange rate, using fallback value.");
       }
 
-      // 3. Olah data
+      // 3. Process data
       const rows = coins
         .map((coin) => {
           const priceData = dataMap[coin.symbol];
@@ -62,7 +62,7 @@ export default (bot) => {
         .filter(Boolean);
 
       if (rows.length === 0) {
-        return ctx.reply("❌ Data harga tidak tersedia di Binance.");
+        return ctx.reply("❌ Price data is not available on Binance.");
       }
 
       const maxSymbol = Math.max(...rows.map((r) => r.symbol.length));
@@ -76,13 +76,13 @@ export default (bot) => {
         )
         .join("\n");
 
-      // Tambahkan info kurs USDT ke dalam message
-      const message = `💰 *Crypto Prices*\n\n\`\`\`\n${table}\n\`\`\`\n\n📊 *Kurs USDT/IDR:* Rp${formatIDR(usdtToIdr)}\n\n_Source: Binance (Spot) + CoinGecko (Kurs IDR)_`;
+      // Add USDT exchange rate info to the message
+      const message = `💰 *Crypto Prices*\n\n\`\`\`\n${table}\n\`\`\`\n\n📊 *USDT/IDR Rate:* Rp${formatIDR(usdtToIdr)}\n\n_Source: Binance (Spot) + CoinGecko (IDR Rate)_`;
 
       await ctx.reply(message, { parse_mode: "Markdown" });
     } catch (err) {
       console.error("Crypto price fetch error:", err);
-      await ctx.reply("❌ Gagal mengambil harga crypto. Coba lagi nanti.");
+      await ctx.reply("❌ Failed to fetch crypto prices. Please try again later.");
     }
   });
 };
