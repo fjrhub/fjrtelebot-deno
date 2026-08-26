@@ -4,7 +4,6 @@ export const PROVIDER_MODELS = {
   groq: [
     "qwen/qwen3.6-27b",
     "qwen/qwen3.8-27b",
-    "llama-3.1-8b-instant",
     "openai/gpt-oss-120b"
   ],
   openrouter: [
