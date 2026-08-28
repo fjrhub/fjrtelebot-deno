@@ -10,7 +10,7 @@ import github from "./commands/tools/github.js";
 import releases from "./commands/tools/releases.js";
 import calc from "./commands/tools/calc.js";
 import setver from "./commands/tools/setver.js";
-import dl from "./commands/tools/dl.js";
+// import dl from "./commands/tools/dl.js";
 import encrypt from "./commands/tools/enc.js";
 import decrypt from "./commands/tools/dec.js";
 import help from "./commands/tools/help.js";
@@ -31,7 +31,7 @@ export const registerHandlers = (bot) => {
   aiprovider(bot);
   qr(bot);
   releases(bot);
-  dl(bot);
+  // dl(bot);
   history(bot);
   calc(bot);
   reset(bot);
