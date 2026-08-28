@@ -1,84 +1,84 @@
-// commands/dl.js (atau .ts)
+// commands/dl.js
+import { InputFile } from "npm:grammy";
 
 const VERCEL_API_URL = Deno.env.get("VERCEL_API_URL");
 
 export default (bot) => {
   bot.command("dl", async (ctx) => {
-    // 1. Ambil URL dari pesan (Format: /dl <url>)
     const text = ctx.message?.text || "";
     const parts = text.split(" ");
     const targetUrl = parts[1];
 
-    // 2. Validasi input
+    // 1. Validasi Input
     if (!targetUrl || !targetUrl.startsWith("http")) {
       return ctx.reply(
-        "⚠️ *Format salah!*\n\n" +
-        "Gunakan: `/dl <url_video>`\n" +
-        "Contoh: `/dl https://vt.tiktok.com/ZSVGUNMoC/`",
+        "⚠️ *Format salah!*\n\nGunakan: `/dl <url>`\nContoh: `/dl https://vt.tiktok.com/ZSVGUNMoC/`",
         { parse_mode: "Markdown" }
       );
     }
 
-    // 3. Validasi konfigurasi .env
     if (!VERCEL_API_URL) {
-      return ctx.reply("❌ *Konfigurasi Server Error*\nAdmin belum mengatur VERCEL_API_URL di .env", { parse_mode: "Markdown" });
+      return ctx.reply("❌ *Konfigurasi Server Error*\nAdmin belum mengatur VERCEL_API_URL di file .env", { parse_mode: "Markdown" });
     }
 
-    // 4. Kirim pesan loading
+    // 2. Pesan Loading
     const loadingMsg = await ctx.reply("⏳ *Sedang memproses video...*\nMohon tunggu sebentar.", { parse_mode: "Markdown" });
 
     try {
-      // 5. Request ke Vercel API
+      // 3. Minta Vercel API untuk mendapatkan URL video asli (bypass 403)
       const apiUrl = `${VERCEL_API_URL}/api/get_url?url=${encodeURIComponent(targetUrl)}`;
-      
-      const response = await fetch(apiUrl, {
-        headers: {
-          "User-Agent": "FJRToolsBot/1.0 (Telegram Bot)"
-        }
-      });
-      
-      const data = await response.json();
+      const apiResponse = await fetch(apiUrl);
+      const data = await apiResponse.json();
 
       if (data.status !== "success") {
-        return ctx.api.editMessageText(
-          ctx.chat.id, 
-          loadingMsg.message_id, 
-          `❌ *Gagal Memproses*\n${data.message}`, 
-          { parse_mode: "Markdown" }
-        );
+        return ctx.api.editMessageText(ctx.chat.id, loadingMsg.message_id, `❌ *Gagal Memproses*\n${data.message}`, { parse_mode: "Markdown" });
       }
 
-      // 6. Tentukan URL final (Gunakan stream_url agar tidak kena 403 dari TikTok)
-      // Jika stream_url relatif, gabungkan dengan VERCEL_API_URL
-      const finalVideoUrl = data.stream_url.startsWith("http") 
-        ? data.stream_url 
-        : `${VERCEL_API_URL}${data.stream_url}`;
+      const videoUrl = data.video_url;
+      const title = data.title || "Video";
 
-      // 7. Update status loading
-      await ctx.api.editMessageText(
-        ctx.chat.id, 
-        loadingMsg.message_id, 
-        "📤 *Sedang mengirim video...*", 
-        { parse_mode: "Markdown" }
-      );
+      await ctx.api.editMessageText(ctx.chat.id, loadingMsg.message_id, "📥 *Sedang mengunduh dari sumber...*", { parse_mode: "Markdown" });
 
-      // 8. Kirim Video ke Telegram
-      // Grammy bisa langsung menerima string URL untuk replyWithVideo
-      await ctx.replyWithVideo(finalVideoUrl, {
-        caption: `📥 *${data.title || "Video"}*\n\n_Download via @FJRToolsBot_`,
+      // 4. Deno mengunduh video dengan Header yang benar (Kunci agar tidak kena 403)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 detik timeout
+
+      const videoResponse = await fetch(videoUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Referer": "https://www.tiktok.com/"
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!videoResponse.ok) {
+        throw new Error(`Gagal mengunduh video: HTTP ${videoResponse.status}`);
+      }
+
+      await ctx.api.editMessageText(ctx.chat.id, loadingMsg.message_id, "📤 *Sedang mengirim ke Telegram...*", { parse_mode: "Markdown" });
+
+      // 5. Kirim LANGSUNG sebagai Stream (InputFile) ke Telegram
+      // Ini menghindari error "failed to get HTTP URL content" karena Telegram tidak perlu fetch URL sendiri
+      const inputFile = new InputFile(videoResponse.body, `video_${Date.now()}.mp4`);
+      
+      await ctx.replyWithVideo(inputFile, {
+        caption: `📥 *${title}*\n\n_Download via @FJRToolsBot_`,
         parse_mode: "Markdown",
         supports_streaming: true
       });
 
-      // 9. Hapus pesan loading setelah berhasil
+      // 6. Hapus pesan loading setelah berhasil
       await ctx.api.deleteMessage(ctx.chat.id, loadingMsg.message_id);
 
     } catch (error) {
       console.error("[DL Command Error]:", error);
+      let errorMsg = "❌ Terjadi kesalahan tak terduga.";
       
-      let errorMsg = "❌ Terjadi kesalahan tak terduga saat memproses video.";
-      if (error.message.includes("fetch")) {
-        errorMsg = "❌ Gagal menghubungi server extractor. Coba lagi nanti.";
+      if (error.name === "AbortError" || error.message.includes("timeout")) {
+        errorMsg = "⚠️ Waktu unduh habis. Video mungkin terlalu besar atau koneksi lambat.";
+      } else if (error.message.includes("403") || error.message.includes("404")) {
+        errorMsg = "❌ Gagal mengunduh: Link mungkin rusak, kedaluwarsa, atau diblokir oleh sumber.";
       }
 
       await ctx.api.editMessageText(ctx.chat.id, loadingMsg.message_id, errorMsg);
