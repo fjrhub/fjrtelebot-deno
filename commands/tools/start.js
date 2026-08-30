@@ -120,6 +120,10 @@ export default (bot) => {
       // 5. Fallback untuk TikTok Video atau Instagram (Single Media)
       else {
         console.log(`[6/7] Processing as single media (Video/IG)...`);
+        
+        // 🔍 DEBUG: Aktifkan ini sementara untuk melihat struktur JSON asli dari API!
+        console.log("[API] FULL RESPONSE JSON:", JSON.stringify(apiData, null, 2));
+
         let singleUrl = "";
         let isVideo = false;
         
@@ -127,29 +131,54 @@ export default (bot) => {
           singleUrl = result.alternatives?.selected || result.alternatives?.hd || (typeof result.data === "string" ? result.data : null);
           isVideo = true;
         } else if (platform === "Instagram") {
-          singleUrl = Array.isArray(result.url) ? result.url[0] : result.url;
+          // 🔧 PERBAIKAN: Coba beberapa kemungkinan key yang biasa dipakai API downloader
+          singleUrl = result.url || result.data || result.video_url || result.image_url || result.medias?.[0]?.url;
+          
+          // Jika masih array, ambil elemen pertama
+          if (Array.isArray(singleUrl)) {
+            singleUrl = singleUrl[0];
+          }
+
           isVideo = result.metadata?.isVideo === true || result.metadata?.isVideo === "true" || (typeof singleUrl === "string" && singleUrl.includes(".mp4"));
         }
 
-        if (!singleUrl) throw new Error("URL media tidak ditemukan di response API.");
-
-        console.log(`[MEDIA] Downloading single media...`);
-        const mediaRes = await fetch(singleUrl, { headers });
-        if (!mediaRes.ok) throw new Error(`Gagal download media: HTTP ${mediaRes.status}`);
-
-        console.log(`[MEDIA] Converting to ArrayBuffer...`);
-        const buffer = await mediaRes.arrayBuffer();
-        const ext = isVideo ? ".mp4" : ".jpeg";
-        const inputFile = new InputFile(new Uint8Array(buffer), `media_${Date.now()}${ext}`);
-
-        console.log(`[TELEGRAM] Sending ${isVideo ? "video" : "photo"}...`);
-        if (isVideo) {
-          await bot.api.sendVideo(chatId, inputFile, { caption, parse_mode: "HTML", supports_streaming: true });
-        } else {
-          await bot.api.sendPhoto(chatId, inputFile, { caption, parse_mode: "HTML" });
+        if (!singleUrl) {
+          console.error("[ERROR] Struktur API tidak dikenali. URL tetap kosong.");
+          throw new Error("Format response API tidak dikenali atau URL kosong.");
         }
-        console.log(`[TELEGRAM] ✅ Media sent successfully.`);
-        await ctx.reply("✅ <b>Selesai!</b>", { parse_mode: "HTML" });
+
+        console.log(`[MEDIA] Downloading single media from: ${singleUrl}`);
+        
+        // Tambahkan timeout agar tidak menggantung selamanya
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 detik timeout
+
+        try {
+          const mediaRes = await fetch(singleUrl, { 
+            headers,
+            signal: controller.signal 
+          });
+          clearTimeout(timeoutId);
+          
+          if (!mediaRes.ok) throw new Error(`Gagal download media: HTTP ${mediaRes.status}`);
+
+          console.log(`[MEDIA] Converting to ArrayBuffer...`);
+          const buffer = await mediaRes.arrayBuffer();
+          const ext = isVideo ? ".mp4" : ".jpeg";
+          const inputFile = new InputFile(new Uint8Array(buffer), `media_${Date.now()}${ext}`);
+
+          console.log(`[TELEGRAM] Sending ${isVideo ? "video" : "photo"}...`);
+          if (isVideo) {
+            await bot.api.sendVideo(chatId, inputFile, { caption, parse_mode: "HTML", supports_streaming: true });
+          } else {
+            await bot.api.sendPhoto(chatId, inputFile, { caption, parse_mode: "HTML" });
+          }
+          console.log(`[TELEGRAM] ✅ Media sent successfully.`);
+          await ctx.reply("✅ <b>Selesai!</b>", { parse_mode: "HTML" });
+        } catch (fetchErr) {
+          clearTimeout(timeoutId);
+          throw new Error(`Gagal mengunduh file: ${fetchErr.message}`);
+        }
       }
 
       console.log("[7/7] 🎉 PROCESS COMPLETED SUCCESSFULLY");

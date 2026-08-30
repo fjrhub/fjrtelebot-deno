@@ -30,6 +30,9 @@ Deno.serve(async (req) => {
     return await handleUpdate(req);
   } catch (err) {
     console.error("[webhook error]", err.message);
-    return new Response("Invalid Telegram update", { status: 400 });
+    // ⚠️ PERUBAHAN KRUSIAL: 
+    // Kembalikan 200 OK agar Telegram TIDAK RETRY.
+    // Kita asumsikan error sudah ditangani di level handler (ctx.reply).
+    return new Response("OK", { status: 200 }); 
   }
 });
