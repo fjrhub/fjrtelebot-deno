@@ -54,7 +54,7 @@ export default (bot) => {
       console.log(`[5/7] Fetching Downloader API: ${apiUrl}`);
       const headers = { 
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Referer": "https://www.tiktok.com/", // Penting untuk bypass TikTok CDN block
+        "Referer": "https://www.tiktok.com/",
         "Accept": "image/avif,image/webp,image/*,*/*;q=0.8"
       };
 
@@ -62,7 +62,9 @@ export default (bot) => {
       console.log(`[API] Downloader HTTP Status: ${apiRes.status}`);
       
       const apiData = await apiRes.json();
-      // console.log("[API] Full Response:", JSON.stringify(apiData, null, 2)); // Uncomment jika ingin lihat full JSON di log
+      
+      // 🔍 DEBUG: Lihat struktur JSON asli dari API untuk memastikan key yang benar
+      console.log("[API] FULL RESPONSE JSON:", JSON.stringify(apiData, null, 2));
 
       if (!apiData.status || !apiData.result) {
         throw new Error(`API Downloader gagal: ${apiData.message || "Response tidak valid"}`);
@@ -72,12 +74,11 @@ export default (bot) => {
       const mention = ctx.from.username ? `@${ctx.from.username}` : ctx.from.first_name;
       const caption = `📥 Sender: <a href="tg://user?id=${userId}">${mention}</a>`;
 
-      // 4. Proses TikTok Image Mode (Sesuai JSON yang kamu berikan)
+      // 4. Proses TikTok Image Mode
       if (platform === "TikTok" && result.type === "image") {
         let imageUrls = Array.isArray(result.data) ? result.data : 
                         (Array.isArray(result.alternatives) ? result.alternatives : [result.data].filter(Boolean));
         
-        // Terapkan filter excludedSlides
         if (excludedSlides.length > 0) {
           imageUrls = imageUrls.filter((_, index) => !excludedSlides.includes(index + 1));
         }
@@ -88,7 +89,6 @@ export default (bot) => {
           throw new Error("Tidak ada gambar yang tersisa setelah filter.");
         }
 
-        // Kirim satu per satu agar stabil dan terlog dengan baik
         for (let i = 0; i < Math.min(imageUrls.length, 10); i++) {
           console.log(`[MEDIA] Downloading image ${i + 1}/${imageUrls.length}...`);
           
@@ -100,14 +100,12 @@ export default (bot) => {
             continue; 
           }
 
-          console.log(`[MEDIA] Converting to ArrayBuffer (mencegah stream putus)...`);
           const buffer = await mediaRes.arrayBuffer();
           console.log(`[MEDIA] Buffer size: ${(buffer.byteLength / 1024).toFixed(2)} KB`);
 
           const inputFile = new InputFile(new Uint8Array(buffer), `tiktok_img_${Date.now()}_${i}.jpeg`);
           
-          console.log(`[TELEGRAM] Sending photo ${i + 1} to chat ${chatId}...`);
-          const isCaption = (i === 0); // Caption hanya di gambar pertama
+          const isCaption = (i === 0);
           await bot.api.sendPhoto(chatId, inputFile, { 
             caption: isCaption ? caption : "", 
             parse_mode: "HTML" 
@@ -120,10 +118,6 @@ export default (bot) => {
       // 5. Fallback untuk TikTok Video atau Instagram (Single Media)
       else {
         console.log(`[6/7] Processing as single media (Video/IG)...`);
-        
-        // 🔍 DEBUG: Aktifkan ini sementara untuk melihat struktur JSON asli dari API!
-        console.log("[API] FULL RESPONSE JSON:", JSON.stringify(apiData, null, 2));
-
         let singleUrl = "";
         let isVideo = false;
         
@@ -131,10 +125,9 @@ export default (bot) => {
           singleUrl = result.alternatives?.selected || result.alternatives?.hd || (typeof result.data === "string" ? result.data : null);
           isVideo = true;
         } else if (platform === "Instagram") {
-          // 🔧 PERBAIKAN: Coba beberapa kemungkinan key yang biasa dipakai API downloader
+          // 🔧 Parsing lebih fleksibel untuk berbagai kemungkinan struktur response API
           singleUrl = result.url || result.data || result.video_url || result.image_url || result.medias?.[0]?.url;
           
-          // Jika masih array, ambil elemen pertama
           if (Array.isArray(singleUrl)) {
             singleUrl = singleUrl[0];
           }
@@ -149,9 +142,9 @@ export default (bot) => {
 
         console.log(`[MEDIA] Downloading single media from: ${singleUrl}`);
         
-        // Tambahkan timeout agar tidak menggantung selamanya
+        // Tambahkan timeout 15 detik agar tidak menggantung selamanya
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 detik timeout
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
 
         try {
           const mediaRes = await fetch(singleUrl, { 
@@ -186,8 +179,15 @@ export default (bot) => {
 
     } catch (err) {
       console.error("[ERROR] ❌ FATAL ERROR:", err.message);
-      console.error("[ERROR] Stack:", err.stack);
-      await ctx.reply(`❌ <b>Gagal memproses:</b>\n<code>${err.message}</code>`, { parse_mode: "HTML" });
+      
+      // 🛡️ Bulletproof error reply: sanitize HTML & fallback ke text polos jika gagal
+      try {
+        const safeMessage = err.message.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        await ctx.reply(`❌ <b>Gagal memproses:</b>\n<code>${safeMessage}</code>`, { parse_mode: "HTML" });
+      } catch (replyErr) {
+        console.error("[ERROR] Gagal mengirim pesan error ke user:", replyErr.message);
+        await ctx.reply(`❌ Gagal memproses: ${err.message}`).catch(() => {});
+      }
     }
   });
 };
