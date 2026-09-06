@@ -25,7 +25,7 @@ const coins = [
 
 export default (bot) => {
   // Saran: Ubah command menjadi "prices" atau "crypto" karena mengambil banyak koin, bukan hanya BTC
-  bot.command("prices", async (ctx) => {
+  bot.command("btc", async (ctx) => {
     try {
       // 2. Optimasi: Ambil hanya simbol yang dibutuhkan untuk mengurangi ukuran payload API secara drastis
       const symbolsParam = JSON.stringify(coins.map((c) => c.symbol));
